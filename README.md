@@ -28,10 +28,10 @@ Les données PostgreSQL et Redis sont conservées dans des volumes Docker nommé
 
 ## Points de contrôle
 
-- Interface : <http://localhost:8080>
-- Liveness via proxy : <http://localhost:8080/api/health/live>
-- Readiness via proxy : <http://localhost:8080/api/health/ready>
-- Documentation API en développement : <http://localhost:8080/api/docs>
+- Interface : <http://localhost:8081>
+- Liveness via proxy : <http://localhost:8081/api/health/live>
+- Readiness via proxy : <http://localhost:8081/api/health/ready>
+- Documentation API en développement : <http://localhost:8081/api/docs>
 
 La liveness indique que le processus API répond. La readiness retourne `503` tant que PostgreSQL,
 Redis ou la migration attendue ne sont pas prêts.
