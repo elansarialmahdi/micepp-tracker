@@ -1,0 +1,311 @@
+name: micepp-tracker
+
+x-protection-environment: &protection-environment
+  APP_ENV: ${APP_ENV:-development}
+  APP_SECRET_KEY: ${APP_SECRET_KEY:-development-only-change-me}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-micepp}:${POSTGRES_PASSWORD:-micepp-development}@postgres:5432/${POSTGRES_DB:-micepp}
+  REDIS_URL: redis://redis:6379/0
+  NVD_MODE: ${NVD_MODE:-mock}
+  NVD_API_KEY: ${NVD_API_KEY:-}
+  NVD_CPE_URL: ${NVD_CPE_URL:-https://services.nvd.nist.gov/rest/json/cpes/2.0}
+  NVD_CVE_URL: ${NVD_CVE_URL:-https://services.nvd.nist.gov/rest/json/cves/2.0}
+  CVE_API_URL: ${CVE_API_URL:-https://cveawg.mitre.org/api/cve}
+  NVD_TIMEOUT_SECONDS: ${NVD_TIMEOUT_SECONDS:-30}
+  NVD_CACHE_TTL_SECONDS: ${NVD_CACHE_TTL_SECONDS:-86400}
+  NVD_MAX_PAGES: ${NVD_MAX_PAGES:-20}
+  NVD_MIN_CPE_CONFIDENCE: ${NVD_MIN_CPE_CONFIDENCE:-0.82}
+  OSV_MODE: ${OSV_MODE:-live}
+  OSV_API_URL: ${OSV_API_URL:-https://api.osv.dev/v1}
+  DEPS_DEV_API_URL: ${DEPS_DEV_API_URL:-https://api.deps.dev/v3}
+  OSV_TIMEOUT_SECONDS: ${OSV_TIMEOUT_SECONDS:-20}
+  REALTIME_DEFAULT_INTERVAL_SECONDS: ${REALTIME_DEFAULT_INTERVAL_SECONDS:-3600}
+  REALTIME_MIN_INTERVAL_SECONDS: ${REALTIME_MIN_INTERVAL_SECONDS:-60}
+  REALTIME_BATCH_SIZE: ${REALTIME_BATCH_SIZE:-25}
+  REALTIME_MAX_CONCURRENCY: ${REALTIME_MAX_CONCURRENCY:-2}
+  REALTIME_LOCK_TTL_SECONDS: ${REALTIME_LOCK_TTL_SECONDS:-3600}
+  REALTIME_SCHEDULER_POLL_SECONDS: ${REALTIME_SCHEDULER_POLL_SECONDS:-60}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-micepp}
+      POSTGRES_USER: ${POSTGRES_USER:-micepp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-micepp-development}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      target: development
+    command: ["sh", "-c", "alembic upgrade head && python -m app.cli.bootstrap_admin && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-MICEPP-Tracker}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-development-only-change-me}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-micepp}:${POSTGRES_PASSWORD:-micepp-development}@postgres:5432/${POSTGRES_DB:-micepp}
+      REDIS_URL: redis://redis:6379/0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      EXPECTED_DATABASE_REVISION: ${EXPECTED_DATABASE_REVISION:-20260714_0010}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-315360000}
+      JWT_REMEMBER_REFRESH_TTL_SECONDS: ${JWT_REMEMBER_REFRESH_TTL_SECONDS:-315360000}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_DISPLAY_NAME: ${BOOTSTRAP_ADMIN_DISPLAY_NAME:-Administrateur}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+      LOGIN_RATE_WINDOW_SECONDS: ${LOGIN_RATE_WINDOW_SECONDS:-300}
+      LOGIN_LOCK_SECONDS: ${LOGIN_LOCK_SECONDS:-900}
+      IMPORT_MAX_FILE_BYTES: ${IMPORT_MAX_FILE_BYTES:-5242880}
+      IMPORT_MAX_UNCOMPRESSED_BYTES: ${IMPORT_MAX_UNCOMPRESSED_BYTES:-20971520}
+      IMPORT_MAX_ROWS: ${IMPORT_MAX_ROWS:-1000}
+      IMPORT_MAX_COLUMNS: ${IMPORT_MAX_COLUMNS:-50}
+      IMPORT_TIMEOUT_SECONDS: ${IMPORT_TIMEOUT_SECONDS:-15}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_API_URL: ${GEMINI_API_URL:-https://generativelanguage.googleapis.com/v1beta}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
+      SCAN_DETECTOR_MODE: ${SCAN_DETECTOR_MODE:-mock}
+      SCAN_TASKS_EAGER: ${SCAN_TASKS_EAGER:-false}
+      ALLOWED_SCAN_NETWORKS: ${ALLOWED_SCAN_NETWORKS:-}
+      ALLOW_PRIVATE_NETWORK_SCANS: ${ALLOW_PRIVATE_NETWORK_SCANS:-false}
+      MAX_SCAN_DURATION_SECONDS: ${MAX_SCAN_DURATION_SECONDS:-600}
+      SCAN_MAX_PORTS: ${SCAN_MAX_PORTS:-100}
+      SCAN_MAX_REDIRECTS: ${SCAN_MAX_REDIRECTS:-3}
+      WEB_SCAN_MAX_BODY_BYTES: ${WEB_SCAN_MAX_BODY_BYTES:-2097152}
+      WEB_SCAN_MAX_ASSETS: ${WEB_SCAN_MAX_ASSETS:-8}
+      WEB_SCAN_MAX_ASSET_BYTES: ${WEB_SCAN_MAX_ASSET_BYTES:-1048576}
+      NMAP_BINARY: ${NMAP_BINARY:-nmap}
+      WHATWEB_ENABLED: ${WHATWEB_ENABLED:-true}
+      WHATWEB_BINARY: ${WHATWEB_BINARY:-/opt/whatweb/whatweb}
+      WHATWEB_TIMEOUT_SECONDS: ${WHATWEB_TIMEOUT_SECONDS:-30}
+      NVD_MODE: ${NVD_MODE:-mock}
+      NVD_API_KEY: ${NVD_API_KEY:-}
+      NVD_CPE_URL: ${NVD_CPE_URL:-https://services.nvd.nist.gov/rest/json/cpes/2.0}
+      NVD_CVE_URL: ${NVD_CVE_URL:-https://services.nvd.nist.gov/rest/json/cves/2.0}
+      CVE_API_URL: ${CVE_API_URL:-https://cveawg.mitre.org/api/cve}
+      NVD_TIMEOUT_SECONDS: ${NVD_TIMEOUT_SECONDS:-30}
+      NVD_CACHE_TTL_SECONDS: ${NVD_CACHE_TTL_SECONDS:-86400}
+      NVD_MAX_PAGES: ${NVD_MAX_PAGES:-20}
+      NVD_MIN_CPE_CONFIDENCE: ${NVD_MIN_CPE_CONFIDENCE:-0.82}
+      OSV_MODE: ${OSV_MODE:-live}
+      OSV_API_URL: ${OSV_API_URL:-https://api.osv.dev/v1}
+      DEPS_DEV_API_URL: ${DEPS_DEV_API_URL:-https://api.deps.dev/v3}
+      OSV_TIMEOUT_SECONDS: ${OSV_TIMEOUT_SECONDS:-20}
+      REALTIME_DEFAULT_INTERVAL_SECONDS: ${REALTIME_DEFAULT_INTERVAL_SECONDS:-3600}
+      REALTIME_MIN_INTERVAL_SECONDS: ${REALTIME_MIN_INTERVAL_SECONDS:-60}
+      REALTIME_BATCH_SIZE: ${REALTIME_BATCH_SIZE:-25}
+      REALTIME_MAX_CONCURRENCY: ${REALTIME_MAX_CONCURRENCY:-2}
+      REALTIME_LOCK_TTL_SECONDS: ${REALTIME_LOCK_TTL_SECONDS:-3600}
+      REALTIME_SCHEDULER_POLL_SECONDS: ${REALTIME_SCHEDULER_POLL_SECONDS:-60}
+      REALTIME_TASKS_EAGER: ${REALTIME_TASKS_EAGER:-false}
+      EXPENSIVE_RATE_WINDOW_SECONDS: ${EXPENSIVE_RATE_WINDOW_SECONDS:-60}
+      MANUAL_SERVICE_CHECK_RATE_LIMIT: ${MANUAL_SERVICE_CHECK_RATE_LIMIT:-10}
+      SCAN_CREATE_RATE_LIMIT: ${SCAN_CREATE_RATE_LIMIT:-5}
+      IMPORT_UPLOAD_RATE_LIMIT: ${IMPORT_UPLOAD_RATE_LIMIT:-5}
+      AI_CATEGORIZATION_RATE_LIMIT: ${AI_CATEGORIZATION_RATE_LIMIT:-10}
+      REALTIME_RUN_RATE_LIMIT: ${REALTIME_RUN_RATE_LIMIT:-2}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks: [backend, egress]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    environment:
+      VITE_API_BASE_URL: /api
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [frontend]
+    restart: unless-stopped
+
+  scanner-worker:
+    build:
+      context: ./backend
+      target: scanner
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=2", "--queues=scans"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-development-only-change-me}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-micepp}:${POSTGRES_PASSWORD:-micepp-development}@postgres:5432/${POSTGRES_DB:-micepp}
+      REDIS_URL: redis://redis:6379/0
+      SCAN_DETECTOR_MODE: ${SCAN_DETECTOR_MODE:-mock}
+      ALLOWED_SCAN_NETWORKS: ${ALLOWED_SCAN_NETWORKS:-}
+      ALLOW_PRIVATE_NETWORK_SCANS: ${ALLOW_PRIVATE_NETWORK_SCANS:-false}
+      MAX_SCAN_DURATION_SECONDS: ${MAX_SCAN_DURATION_SECONDS:-600}
+      SCAN_MAX_PORTS: ${SCAN_MAX_PORTS:-100}
+      SCAN_MAX_REDIRECTS: ${SCAN_MAX_REDIRECTS:-3}
+      WEB_SCAN_MAX_BODY_BYTES: ${WEB_SCAN_MAX_BODY_BYTES:-2097152}
+      WEB_SCAN_MAX_ASSETS: ${WEB_SCAN_MAX_ASSETS:-8}
+      WEB_SCAN_MAX_ASSET_BYTES: ${WEB_SCAN_MAX_ASSET_BYTES:-1048576}
+      NMAP_BINARY: ${NMAP_BINARY:-nmap}
+      WHATWEB_ENABLED: ${WHATWEB_ENABLED:-true}
+      WHATWEB_BINARY: ${WHATWEB_BINARY:-/opt/whatweb/whatweb}
+      WHATWEB_TIMEOUT_SECONDS: ${WHATWEB_TIMEOUT_SECONDS:-30}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 1.0
+    networks: [backend, egress]
+    restart: unless-stopped
+
+  protection-worker:
+    build:
+      context: ./backend
+      target: runtime
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=${REALTIME_MAX_CONCURRENCY:-2}", "--queues=protection"]
+    environment: *protection-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 1.0
+    networks: [backend, egress]
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ./backend
+      target: runtime
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    environment: *protection-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [backend]
+    restart: unless-stopped
+
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./infra/reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks: [frontend, backend]
+    restart: unless-stopped
+
+  waf:
+    image: owasp/modsecurity-crs:4.25.0-nginx-lts
+    environment:
+      BACKEND: http://reverse-proxy:80
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      PORT: 8080
+      SSL_PORT: 8443
+      SSL_PROTOCOLS: "TLSv1.2 TLSv1.3"
+      NGINX_ALWAYS_TLS_REDIRECT: "off"
+      SERVER_TOKENS: "off"
+      MODSEC_RULE_ENGINE: ${WAF_MODE:-DetectionOnly}
+      MODSEC_AUDIT_ENGINE: RelevantOnly
+      MODSEC_AUDIT_LOG: /dev/stdout
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      MODSEC_AUDIT_LOG_PARTS: "AHZ"
+      MODSEC_REQ_BODY_ACCESS: "On"
+      MODSEC_REQ_BODY_LIMIT: 10485760
+      MODSEC_REQ_BODY_NOFILES_LIMIT: 1048576
+      MODSEC_RESP_BODY_ACCESS: "On"
+      MODSEC_RESP_BODY_LIMIT: 1048576
+      BLOCKING_PARANOIA: ${WAF_BLOCKING_PARANOIA:-1}
+      DETECTION_PARANOIA: ${WAF_DETECTION_PARANOIA:-2}
+      ANOMALY_INBOUND: ${WAF_ANOMALY_INBOUND:-5}
+      ANOMALY_OUTBOUND: ${WAF_ANOMALY_OUTBOUND:-4}
+      ALLOWED_METHODS: "GET HEAD POST PATCH DELETE OPTIONS"
+      MAX_NUM_ARGS: 256
+      ARG_NAME_LENGTH: 100
+      ARG_LENGTH: 4096
+      TOTAL_ARG_LENGTH: 65536
+      MAX_FILE_SIZE: 5242880
+      COMBINED_FILE_SIZES: 5242880
+      ACCESSLOG: /dev/stdout
+      ERRORLOG: /dev/stderr
+      LOGLEVEL: warn
+      CORS_HEADER_403_ALLOW_ORIGIN: ${WAF_CORS_ALLOW_ORIGIN:-http://localhost:8080}
+    volumes:
+      - ./infra/waf/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:ro
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "${HTTPS_PORT:-8443}:8443"
+    depends_on:
+      reverse-proxy:
+        condition: service_started
+    networks: [frontend]
+    restart: unless-stopped
+
+  log-collector:
+    image: timberio/vector:0.56.0-debian
+    profiles: ["siem"]
+    environment:
+      SIEM_ENDPOINT: ${SIEM_ENDPOINT:-http://siem.invalid/events}
+      SIEM_TOKEN: ${SIEM_TOKEN:-change-me}
+    volumes:
+      - ./infra/siem/vector.yaml:/etc/vector/vector.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - vector-data:/var/lib/vector
+    command: ["--config", "/etc/vector/vector.yaml"]
+    networks: [observability]
+    restart: unless-stopped
+
+networks:
+  frontend:
+  backend:
+    internal: true
+  egress:
+  observability:
+
+volumes:
+  postgres-data:
+  redis-data:
+  frontend-node-modules:
+  vector-data:

@@ -1,0 +1,59 @@
+data_dir: /var/lib/vector
+
+api:
+  enabled: false
+
+sources:
+  docker_logs:
+    type: docker_logs
+    exclude_containers:
+      - log-collector
+
+transforms:
+  normalize_json:
+    type: remap
+    inputs: [docker_logs]
+    source: |
+      parsed, err = parse_json(.message)
+      if err == null && is_object(parsed) {
+        . = merge(., parsed)
+      }
+      del(.label)
+      del(.stream)
+      del(.source_type)
+
+  remove_sensitive_fields:
+    type: remap
+    inputs: [normalize_json]
+    source: |
+      del(.password)
+      del(.token)
+      del(.access_token)
+      del(.refresh_token)
+      del(.authorization)
+      del(.cookie)
+      del(.api_key)
+
+sinks:
+  siem_http:
+    type: http
+    inputs: [remove_sensitive_fields]
+    uri: ${SIEM_ENDPOINT}
+    method: post
+    compression: gzip
+    auth:
+      strategy: custom
+      value: "Bearer ${SIEM_TOKEN}"
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    batch:
+      max_events: 500
+      timeout_secs: 5
+    buffer:
+      type: disk
+      max_size: 268435488
+      when_full: block
+    acknowledgements:
+      enabled: true
