@@ -24,7 +24,7 @@ class Settings(BaseSettings):
         "http://localhost:8080",
         "http://localhost:5173",
     ]
-    expected_database_revision: str = "20260714_0010"
+    expected_database_revision: str = "20260715_0011"
     import_max_file_bytes: int = 5 * 1024 * 1024
     import_max_uncompressed_bytes: int = 20 * 1024 * 1024
     import_max_rows: int = 1000

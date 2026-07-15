@@ -8,11 +8,13 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
     event,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,6 +52,15 @@ class Notification(Base):
         CheckConstraint(
             "severity IN ('critical', 'high', 'medium', 'low', 'info')",
             name="ck_notifications_severity",
+        ),
+        Index(
+            "uq_notifications_vulnerability_service",
+            "service_id",
+            unique=True,
+            postgresql_where=text(
+                "type = 'vulnerability.detected' AND service_id IS NOT NULL"
+            ),
+            sqlite_where=text("type = 'vulnerability.detected' AND service_id IS NOT NULL"),
         ),
     )
 

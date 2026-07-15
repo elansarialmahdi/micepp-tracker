@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -88,6 +88,25 @@ async def notifications_index(
     page_size: int = Query(default=25, ge=1, le=100),
     hidden: bool = False,
 ) -> NotificationListResponse:
+    ranked_threat_notifications = (
+        select(
+            Notification.id.label("notification_id"),
+            func.row_number()
+            .over(
+                partition_by=Notification.service_id,
+                order_by=(Notification.created_at.desc(), Notification.id.desc()),
+            )
+            .label("position"),
+        )
+        .where(
+            Notification.type == "vulnerability.detected",
+            Notification.service_id.is_not(None),
+        )
+        .subquery()
+    )
+    latest_threat_ids = select(ranked_threat_notifications.c.notification_id).where(
+        ranked_threat_notifications.c.position == 1
+    )
     visible = (
         select(Notification, NotificationUserState)
         .outerjoin(
@@ -99,6 +118,13 @@ async def notifications_index(
             NotificationUserState.hidden_at.is_not(None)
             if hidden
             else NotificationUserState.hidden_at.is_(None)
+        )
+        .where(
+            or_(
+                Notification.type != "vulnerability.detected",
+                Notification.service_id.is_(None),
+                Notification.id.in_(latest_threat_ids),
+            )
         )
     )
     total = await db.scalar(select(func.count()).select_from(visible.subquery())) or 0

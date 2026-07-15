@@ -6,13 +6,13 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from packaging.version import InvalidVersion, Version
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.models.notification import Notification, NotificationUserState
 from app.models.service import Service
 from app.models.vulnerability import CPECandidate, MatchState, ServiceVulnerability, Vulnerability
-from app.services.audit import create_notification
 from app.services.nvd_client import NVDClient
 from app.services.osv_client import OSVClient, PackageIdentity
 
@@ -271,6 +271,112 @@ def _osv_identifier(item: dict[str, Any]) -> str | None:
     )
 
 
+_SEVERITY_RANK = {
+    "critical": 5,
+    "high": 4,
+    "medium": 3,
+    "low": 2,
+    "info": 1,
+    "unknown": 0,
+}
+
+
+async def _sync_service_threat_notification(
+    db: AsyncSession,
+    service: Service,
+    now: datetime,
+    *,
+    has_new_findings: bool,
+) -> int:
+    await db.flush()
+    active_vulnerabilities = list(
+        (
+            await db.scalars(
+                select(Vulnerability)
+                .join(
+                    ServiceVulnerability,
+                    ServiceVulnerability.vulnerability_id == Vulnerability.id,
+                )
+                .where(
+                    ServiceVulnerability.service_id == service.id,
+                    ServiceVulnerability.resolved_at.is_(None),
+                )
+            )
+        ).all()
+    )
+    active_vulnerabilities.sort(
+        key=lambda item: (-_SEVERITY_RANK.get(item.severity, 0), item.cve_id)
+    )
+
+    existing = list(
+        (
+            await db.scalars(
+                select(Notification)
+                .where(
+                    Notification.type == "vulnerability.detected",
+                    Notification.service_id == service.id,
+                )
+                .order_by(Notification.created_at.desc(), Notification.id.desc())
+            )
+        ).all()
+    )
+    notification = existing[0] if existing else None
+    for duplicate in existing[1:]:
+        await db.delete(duplicate)
+
+    if not active_vulnerabilities:
+        return 0
+
+    representative = active_vulnerabilities[0]
+    identifiers = [item.cve_id for item in active_vulnerabilities]
+    sources = sorted({item.source for item in active_vulnerabilities if item.source})
+    count = len(active_vulnerabilities)
+    severity = representative.severity if representative.severity in _SEVERITY_RANK else "info"
+    if severity == "unknown":
+        severity = "info"
+    version = f" {service.version}" if service.version else ""
+    message = (
+        f"{service.name}{version} présente {count} vulnérabilité active."
+        if count == 1
+        else f"{service.name}{version} présente {count} vulnérabilités actives."
+    )
+    created = notification is None
+    if notification is None:
+        notification = Notification(
+            type="vulnerability.detected",
+            title=f"Menace sur {service.name}",
+            message=message,
+            severity=severity,
+            platforms=[service.platform],
+            service_id=service.id,
+            vulnerability_id=representative.id,
+            event_metadata={},
+        )
+        db.add(notification)
+        await db.flush()
+    else:
+        notification.title = f"Menace sur {service.name}"
+        notification.message = message
+        notification.severity = severity
+        notification.platforms = [service.platform]
+        notification.vulnerability_id = representative.id
+
+    notification.event_metadata = {
+        "identifier": identifiers[0],
+        "identifiers": identifiers,
+        "vulnerability_count": count,
+        "sources": sources,
+    }
+    if has_new_findings:
+        notification.created_at = now
+        await db.execute(
+            update(NotificationUserState)
+            .where(NotificationUserState.notification_id == notification.id)
+            .values(read_at=None, hidden_at=None)
+        )
+    return int(created or has_new_findings)
+
+
 async def _check_osv(
     db: AsyncSession,
     service: Service,
@@ -280,7 +386,7 @@ async def _check_osv(
 ) -> dict[str, Any]:
     payloads = await client.vulnerabilities(identity)
     seen: set[Any] = set()
-    new_threats = 0
+    new_findings = 0
     for item in payloads:
         identifier = _osv_identifier(item)
         if not identifier:
@@ -341,24 +447,10 @@ async def _check_osv(
         link.last_seen_at, link.resolved_at = now, None
         seen.add(vulnerability.id)
         if is_new:
-            new_threats += 1
-            create_notification(
-                db,
-                type="vulnerability.detected",
-                title=f"Menace sur {service.name}",
-                message=(
-                    f"{service.name} {service.version} est affecté selon OSV "
-                    f"({identity.ecosystem}:{identity.name})."
-                ),
-                severity=severity if severity in {"critical", "high", "medium", "low"} else "info",
-                platforms=[service.platform],
-                service_id=service.id,
-                vulnerability_id=vulnerability.id,
-                metadata={"identifier": identifier, "source": "OSV"},
-            )
+            new_findings += 1
     return {
         "seen": seen,
-        "new_notifications": new_threats,
+        "new_findings": new_findings,
     }
 
 
@@ -374,12 +466,12 @@ async def check_service(db: AsyncSession, service: Service, settings: Settings) 
         )
     seen: set[Any] = set()
     osv_seen: set[Any] = set()
-    new_threats = 0
+    new_findings = 0
     if package_identity is not None:
         osv_result = await _check_osv(db, service, osv_client, package_identity, now)
         osv_seen = set(osv_result["seen"])
         seen.update(osv_seen)
-        new_threats += osv_result["new_notifications"]
+        new_findings += osv_result["new_findings"]
         _security_identity(
             service,
             status="verified",
@@ -506,6 +598,12 @@ async def check_service(db: AsyncSession, service: Service, settings: Settings) 
             if link.vulnerability_id not in seen:
                 link.resolved_at = now
         service.last_checked_at = now
+        new_notifications = await _sync_service_threat_notification(
+            db,
+            service,
+            now,
+            has_new_findings=new_findings > 0,
+        )
         await db.commit()
         return {
             "status": "completed" if package_identity is not None else "needs_review",
@@ -513,7 +611,7 @@ async def check_service(db: AsyncSession, service: Service, settings: Settings) 
             "cpe_uri": None,
             "candidates": len(candidates),
             "active_vulnerabilities": len(seen),
-            "new_notifications": new_threats,
+            "new_notifications": new_notifications,
         }
     payloads = (
         await client.cves_for_keyword(keyword)
@@ -605,22 +703,7 @@ async def check_service(db: AsyncSession, service: Service, settings: Settings) 
         link.last_seen_at, link.resolved_at = now, None
         seen.add(vulnerability.id)
         if is_new:
-            new_threats += 1
-            create_notification(
-                db,
-                type="vulnerability.detected",
-                title=f"Menace sur {service.name}",
-                message=(
-                    f"{service.name} {service.version} est potentiellement affecté : {reason}"
-                ),
-                severity=vulnerability.severity
-                if vulnerability.severity in {"critical", "high", "medium", "low"}
-                else "info",
-                platforms=[service.platform],
-                service_id=service.id,
-                vulnerability_id=vulnerability.id,
-                metadata={"cve_id": cve_id, "match_state": state.value},
-            )
+            new_findings += 1
     previous = (
         await db.scalars(
             select(ServiceVulnerability).where(
@@ -633,6 +716,12 @@ async def check_service(db: AsyncSession, service: Service, settings: Settings) 
         if link.vulnerability_id not in seen:
             link.resolved_at = now
     service.last_checked_at = now
+    new_notifications = await _sync_service_threat_notification(
+        db,
+        service,
+        now,
+        has_new_findings=new_findings > 0,
+    )
     await db.commit()
     return {
         "status": "completed",
@@ -640,5 +729,5 @@ async def check_service(db: AsyncSession, service: Service, settings: Settings) 
         "cpe_uri": service.cpe_uri,
         "candidates": len(candidates),
         "active_vulnerabilities": len(seen),
-        "new_notifications": new_threats,
+        "new_notifications": new_notifications,
     }

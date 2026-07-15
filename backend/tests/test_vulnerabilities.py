@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from app.core.security import create_access_token
 from app.models.auth import User
 from app.models.notification import Notification
 from app.models.vulnerability import ServiceVulnerability, Vulnerability
+from app.services.nvd_client import MOCK_CVES, NVDClient
 from tests.conftest import AuthTestContext
 
 
@@ -129,6 +131,54 @@ def test_nvd_check_selects_cpe_creates_history_and_deduplicates_notifications(
         return notifications or 0, links or 0, cves or 0
 
     assert asyncio.run(counts()) == (1, 1, 1)
+
+
+def test_multiple_vulnerabilities_create_one_notification_per_service(
+    vulnerability_context: VulnerabilityTestContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = deepcopy(MOCK_CVES["f5:nginx"][0])
+    second = deepcopy(first)
+    second["cve"]["id"] = "CVE-2026-99999"
+    second["cve"]["descriptions"][0]["value"] = "A second NGINX vulnerability."
+
+    async def multiple_cves(_client: NVDClient, _cpe_uri: str) -> list[dict]:
+        return [first, second]
+
+    monkeypatch.setattr(NVDClient, "cves_for_cpe", multiple_cves)
+
+    checked = vulnerability_context.client.post(
+        f"/v1/services/{vulnerability_context.service_id}/check",
+        headers=vulnerability_context.headers,
+    )
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["active_vulnerabilities"] == 2
+    assert checked.json()["new_notifications"] == 1
+
+    notifications = vulnerability_context.client.get(
+        "/v1/notifications", headers=vulnerability_context.headers
+    )
+    assert notifications.status_code == 200
+    payload = notifications.json()
+    assert payload["total"] == 1
+    assert len(payload["items"]) == 1
+    notification = payload["items"][0]
+    assert notification["service_name"] == "NGINX"
+    assert notification["metadata"]["vulnerability_count"] == 2
+    assert set(notification["metadata"]["identifiers"]) == {
+        "CVE-2021-23017",
+        "CVE-2026-99999",
+    }
+
+    rechecked = vulnerability_context.client.post(
+        f"/v1/services/{vulnerability_context.service_id}/check",
+        headers=vulnerability_context.headers,
+    )
+    assert rechecked.status_code == 200
+    assert rechecked.json()["new_notifications"] == 0
+    assert vulnerability_context.client.get(
+        "/v1/notifications", headers=vulnerability_context.headers
+    ).json()["total"] == 1
 
 
 def test_version_change_invalidates_old_result_and_rechecks_current_version(
