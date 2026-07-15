@@ -97,7 +97,7 @@ def test_ai_categorization_creates_and_reuses_global_categories(
     )
     assert response.status_code == 200
     by_key = {item["key"]: item for item in response.json()["items"]}
-    assert by_key["apache"]["category"]["name"] == "Serveurs web"
+    assert by_key["apache"]["category"]["name"] == "Web et API"
     assert by_key["php"]["category"]["name"] == "Langages et runtimes"
     assert by_key["apache"]["category_created"] is True
 
@@ -108,6 +108,31 @@ def test_ai_categorization_creates_and_reuses_global_categories(
     )
     assert second.status_code == 200
     assert second.json()["items"][0]["category_created"] is False
+
+
+def test_ai_preview_prefers_a_compatible_existing_category(
+    inventory_context: InventoryContext,
+) -> None:
+    platform_id = create_platform(inventory_context, "Plateforme avec catégories")
+    inventory_context.settings.ai_provider = "mock"
+    category = create_category(inventory_context, platform_id, "Serveurs web").json()
+
+    preview = inventory_context.client.post(
+        f"/v1/platforms/{platform_id}/categories/ai-categorize/preview",
+        headers=inventory_context.headers,
+        json={"items": [{"key": "apache", "name": "Apache HTTP Server"}]},
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["items"] == [
+        {
+            "key": "apache",
+            "category_name": "Serveurs web",
+            "existing_category_id": category["id"],
+            "confidence": 0.9,
+            "reason": "Classification déterministe du provider de test.",
+        }
+    ]
 
 
 def test_ai_preview_does_not_create_until_selected_categories_are_confirmed(
@@ -127,7 +152,7 @@ def test_ai_preview_does_not_create_until_selected_categories_are_confirmed(
     )
     assert preview.status_code == 200
     assert [item["category_name"] for item in preview.json()["items"]] == [
-        "Serveurs web",
+        "Web et API",
         "Langages et runtimes",
     ]
     categories_before = inventory_context.client.get(

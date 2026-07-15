@@ -89,8 +89,8 @@ test("ajoute plusieurs lignes manuelles en une confirmation", async () => {
     screen.getByRole("button", { name: "Catégorisation par IA" }),
   );
   await waitFor(() => expect(mocks.previewServiceCategorization).toHaveBeenCalledOnce());
-  fireEvent.click(screen.getByRole("button", { name: "Confirmer la sélection" }));
   await waitFor(() => expect(mocks.confirmServiceCategorization).toHaveBeenCalledOnce());
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Confirmer l’ajout" }));
 
   await waitFor(() => {

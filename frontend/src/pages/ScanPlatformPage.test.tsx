@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getScan: vi.fn(),
   cancelScan: vi.fn(),
   confirmScan: vi.fn(),
+  getCategories: vi.fn(),
+  createCategory: vi.fn(),
   previewServiceCategorization: vi.fn(),
   confirmServiceCategorization: vi.fn(),
 }));
@@ -23,6 +25,8 @@ vi.mock("../api/scans", () => ({
   confirmScan: mocks.confirmScan,
 }));
 vi.mock("../api/inventory", () => ({
+  getCategories: mocks.getCategories,
+  createCategory: mocks.createCategory,
   previewServiceCategorization: mocks.previewServiceCategorization,
   confirmServiceCategorization: mocks.confirmServiceCategorization,
 }));
@@ -60,6 +64,21 @@ const job = {
       category_confidence: 0.75,
       selected_for_import: true,
     },
+    {
+      id: "detection-duplicate",
+      detected_name: " nginx ",
+      detected_version: "1.26",
+      detected_vendor: null,
+      detected_product: "nginx",
+      detected_cpe: null,
+      source_detector: "duplicate",
+      confidence: 0.72,
+      port: 443,
+      protocol: "tcp",
+      category_suggestion: "Web",
+      category_confidence: 0.7,
+      selected_for_import: true,
+    },
   ],
 };
 
@@ -75,6 +94,32 @@ beforeEach(() => {
     created: 1,
     skipped: 0,
     categories_created: 1,
+  });
+  mocks.getCategories.mockResolvedValue([
+    {
+      id: "category-web-old",
+      name: "Web",
+      description: null,
+      created_at: "2026-07-13T12:00:00Z",
+      updated_at: "2026-07-13T12:00:00Z",
+      archived_at: null,
+    },
+    {
+      id: "category-web",
+      name: "Serveurs web",
+      description: null,
+      created_at: "2026-07-13T12:00:00Z",
+      updated_at: "2026-07-13T12:00:00Z",
+      archived_at: null,
+    },
+  ]);
+  mocks.createCategory.mockResolvedValue({
+    id: "category-infrastructure",
+    name: "Infrastructure",
+    description: null,
+    created_at: "2026-07-13T12:00:00Z",
+    updated_at: "2026-07-13T12:00:00Z",
+    archived_at: null,
   });
   mocks.previewServiceCategorization.mockResolvedValue({
     items: [
@@ -119,18 +164,37 @@ test("détecte automatiquement la cible puis permet de corriger et confirmer les
     }),
   );
   expect(await screen.findByText("Services détectés")).toBeInTheDocument();
+  expect(screen.getByText(/1 doublon fusionné/)).toBeInTheDocument();
+  expect(screen.getAllByRole("checkbox", { name: /Ajouter Nginx/i })).toHaveLength(1);
+
+  const categoryPicker = screen.getByRole("combobox", { name: "Catégorie Nginx" });
+  fireEvent.click(categoryPicker);
+  fireEvent.change(screen.getByRole("textbox", { name: "Rechercher une catégorie" }), {
+    target: { value: "Serveurs" },
+  });
+  expect(screen.getByRole("option", { name: "Serveurs web" })).toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "Web" })).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Créer une catégorie" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Nom de la nouvelle catégorie" }), {
+    target: { value: "Infrastructure" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Créer et sélectionner la catégorie" }),
+  );
+  await waitFor(() => expect(categoryPicker).toHaveTextContent("Infrastructure"));
+
   fireEvent.click(
     screen.getByRole("button", { name: "Catégorisation par IA" }),
   );
   await waitFor(() => expect(mocks.previewServiceCategorization).toHaveBeenCalledOnce());
-  fireEvent.click(screen.getByRole("button", { name: "Confirmer la sélection" }));
   await waitFor(() => expect(mocks.confirmServiceCategorization).toHaveBeenCalledOnce());
-  expect(screen.getByLabelText("Catégorie Nginx")).toHaveValue("Serveurs web");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(categoryPicker).toHaveTextContent("Serveurs web");
   fireEvent.change(screen.getByLabelText("Nom Nginx"), {
     target: { value: "Nginx corrigé" },
   });
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirmer les services sélectionnés" }),
+    screen.getByRole("button", { name: "Confirmer les services" }),
   );
   await waitFor(() =>
     expect(mocks.confirmScan.mock.calls[0]?.[1]?.[0]?.name).toBe(

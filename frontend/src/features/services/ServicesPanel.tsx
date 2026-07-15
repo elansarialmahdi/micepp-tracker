@@ -5,6 +5,7 @@ import {
   Filter,
   FolderPlus,
   MoreHorizontal,
+  Plus,
   Trash2,
   X,
 } from "lucide-react";
@@ -324,7 +325,7 @@ export function ServicesPanel({
                   <h2 id="categories-title">Catégories de la plateforme</h2>
                 </div>
                 <button
-                  className="panel-icon-button"
+                  className="category-modal-close"
                   type="button"
                   aria-label="Fermer les catégories"
                   data-tooltip="Fermer"
@@ -341,14 +342,19 @@ export function ServicesPanel({
                   onSubmit={(event) => void addCategory(event)}
                 >
                   <label htmlFor="new-category">Nouvelle catégorie</label>
-                  <div className="search-control">
+                  <div className="category-create-form__control">
                     <input
                       id="new-category"
                       value={categoryName}
                       onChange={(event) => setCategoryName(event.target.value)}
                     />
-                    <button type="submit" disabled={categoryCreation.isPending}>
-                      Créer
+                    <button
+                      type="submit"
+                      aria-label="Créer la catégorie"
+                      data-tooltip="Créer"
+                      disabled={categoryCreation.isPending || !categoryName.trim()}
+                    >
+                      <Plus aria-hidden="true" />
                     </button>
                   </div>
                 </form>
@@ -368,10 +374,6 @@ export function ServicesPanel({
                   </div>
                 )}
 
-                <div className="category-management-modal__list-heading">
-                  <h3>Toutes les catégories</h3>
-                  <span>{categories.data?.length ?? 0}</span>
-                </div>
                 {categories.isPending && <p role="status">Chargement des catégories…</p>}
                 {categories.isError && (
                   <div className="form-error" role="alert">
@@ -387,7 +389,7 @@ export function ServicesPanel({
                       <span>{item.name}</span>
                       {auth.hasPermission("service.archive") && (
                         <button
-                          className="panel-icon-button"
+                          className="category-delete-button"
                           type="button"
                           onClick={() => void removeCategory(item.id)}
                           aria-label={`Supprimer ${item.name}`}

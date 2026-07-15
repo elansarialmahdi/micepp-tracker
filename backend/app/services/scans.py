@@ -20,25 +20,27 @@ class ScanCancelled(RuntimeError):
 
 
 def fuse_detections(items: list[Detection]) -> list[Detection]:
-    fused: dict[tuple, Detection] = {}
+    fused: dict[tuple[str, str | None], Detection] = {}
     for item in items:
         key = (
             normalized_name(item.name),
             normalized_version(item.version),
-            (item.vendor or "").casefold(),
-            (item.product or "").casefold(),
-            item.port,
-            item.protocol,
-            item.cpe,
         )
         current = fused.get(key)
         if current is None:
             item.evidence = {"sources": [{"detector": item.source, **item.evidence}]}
             fused[key] = item
         else:
+            previous_confidence = current.confidence
             current.confidence = max(current.confidence, item.confidence)
             current.evidence["sources"].append({"detector": item.source, **item.evidence})
             current.source = ",".join(sorted({*current.source.split(","), item.source}))
+            for attribute in ("vendor", "product", "cpe", "port", "protocol"):
+                candidate = getattr(item, attribute)
+                if candidate is not None and (
+                    getattr(current, attribute) is None or item.confidence > previous_confidence
+                ):
+                    setattr(current, attribute, candidate)
     return list(fused.values())
 
 

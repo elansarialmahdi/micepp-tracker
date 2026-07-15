@@ -19,6 +19,7 @@ def test_gemini_categorization_uses_structured_output(monkeypatch) -> None:  # t
                 "assignments": [
                     {
                         "position": 0,
+                        "reuse_category": "__NOUVELLE_CATEGORIE__",
                         "category_name": "Web et API",
                         "confidence": 0.98,
                         "reason": "Apache fournit un serveur HTTP.",
@@ -64,8 +65,13 @@ def test_gemini_categorization_uses_structured_output(monkeypatch) -> None:  # t
     allowed = response_schema["properties"]["assignments"]["items"]["properties"][
         "category_name"
     ]["enum"]
+    reuse_choices = response_schema["properties"]["assignments"]["items"]["properties"][
+        "reuse_category"
+    ]["enum"]
     assert "Bases de données" in allowed
     assert "Frameworks et bibliothèques" in allowed
+    assert "Bases de données" in reuse_choices
+    assert "__NOUVELLE_CATEGORIE__" in reuse_choices
     prompt = captured["body"]["contents"][0]["parts"][0]["text"]
     assert "plus petit nombre possible" in prompt
     assert "catégorie par produit" in prompt
@@ -89,3 +95,19 @@ def test_mock_categorization_groups_related_libraries() -> None:
     assert by_key["react"] == "Frameworks et bibliothèques"
     assert by_key["axios"] == "Frameworks et bibliothèques"
     assert by_key["postgres"] == "Données et stockage"
+
+
+def test_mock_categorization_reuses_a_compatible_existing_category() -> None:
+    settings = Settings(app_env="test", ai_provider="mock")
+    result = asyncio.run(
+        categorize_with_ai(
+            [
+                ServiceToCategorize(key="apache", name="Apache"),
+                ServiceToCategorize(key="nginx", name="Nginx"),
+            ],
+            ["Serveurs web"],
+            settings,
+        )
+    )
+
+    assert {item.category_name for item in result} == {"Serveurs web"}

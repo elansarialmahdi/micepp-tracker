@@ -41,6 +41,7 @@ export function AICategorizationReview({
     if (!rows) return [];
     const grouped = new Map<string, ReviewCategory>();
     rows.forEach((row, index) => {
+      if (row.existing_category_id) return;
       const key = normalizedCategoryName(row.category_name);
       const current = grouped.get(key);
       if (current) {
@@ -57,11 +58,6 @@ export function AICategorizationReview({
     });
     return [...grouped.values()];
   }, [rows]);
-  const preview = useMutation({
-    mutationFn: () => previewServiceCategorization(platformId, items),
-    onSuccess: (data) =>
-      setRows(data.items.map((item) => ({ ...item, selected: true }))),
-  });
   const confirmation = useMutation({
     mutationFn: (reviewRows: ReviewRow[]) =>
       confirmServiceCategorization(
@@ -83,6 +79,17 @@ export function AICategorizationReview({
       setRows(null);
     },
   });
+  const preview = useMutation({
+    mutationFn: () => previewServiceCategorization(platformId, items),
+    onSuccess: (data) => {
+      const reviewRows = data.items.map((item) => ({ ...item, selected: true }));
+      if (reviewRows.some((row) => !row.existing_category_id)) {
+        setRows(reviewRows);
+        return;
+      }
+      confirmation.mutate(reviewRows);
+    },
+  });
   const error = preview.error ?? confirmation.error;
 
   return (
@@ -90,11 +97,17 @@ export function AICategorizationReview({
       <button
         className="ai-categorization-button"
         type="button"
-        disabled={disabled || preview.isPending || items.length === 0}
+        disabled={
+          disabled || preview.isPending || confirmation.isPending || items.length === 0
+        }
         onClick={() => preview.mutate()}
       >
         <Sparkles aria-hidden="true" />
-        {preview.isPending ? "Analyse en cours…" : "Catégorisation par IA"}
+        {preview.isPending
+          ? "Analyse en cours…"
+          : confirmation.isPending
+            ? "Application en cours…"
+            : "Catégorisation par IA"}
       </button>
       {error && (
         <div className="form-error" role="alert">
@@ -120,8 +133,8 @@ export function AICategorizationReview({
             >
             <div className="section-header">
               <div>
-                <h2 id="ai-review-title">Confirmer les catégories</h2>
-                <p>Décochez ou renommez les catégories proposées avant la confirmation finale.</p>
+                <h2 id="ai-review-title">Confirmer les nouvelles catégories</h2>
+                <p>Seules les catégories qui n’existent pas encore sont affichées ici.</p>
               </div>
               <button
                 className="modal-close"

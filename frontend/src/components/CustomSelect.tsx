@@ -1,7 +1,7 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
-import { useOutsideClick } from "../hooks/useOutsideClick";
+import { ViewportMenuPortal } from "./ViewportMenuPortal";
 
 export type SelectOption = {
   value: string;
@@ -32,7 +32,6 @@ export function CustomSelect({
   const listId = `${selectId}-options`;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  useOutsideClick(rootRef, open, () => setOpen(false));
   const selected = options.find((option) => option.value === value);
 
   return (
@@ -60,7 +59,15 @@ export function CustomSelect({
         <ChevronDown aria-hidden="true" />
       </button>
       {open && (
-        <div className="custom-select__menu" id={listId} role="listbox">
+        <ViewportMenuPortal
+          anchorRef={rootRef}
+          className="custom-select__menu custom-select__menu--viewport"
+          id={listId}
+          role="listbox"
+          ariaLabel={ariaLabel}
+          matchAnchorWidth
+          onRequestClose={() => setOpen(false)}
+        >
           {options.map((option) => (
             <button
               key={option.value}
@@ -77,7 +84,7 @@ export function CustomSelect({
               {option.value === value && <Check aria-hidden="true" />}
             </button>
           ))}
-        </div>
+        </ViewportMenuPortal>
       )}
     </div>
   );

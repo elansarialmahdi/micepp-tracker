@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from dataclasses import dataclass
 
 import httpx
@@ -21,6 +22,7 @@ BROAD_CATEGORY_TAXONOMY = (
     "Observabilité et opérations",
     "Outils de développement",
 )
+NEW_CATEGORY_SENTINEL = "__NOUVELLE_CATEGORIE__"
 
 
 class CategorizationUnavailable(RuntimeError):
@@ -50,6 +52,7 @@ class CategoryAssignment:
 
 class _GeminiAssignment(BaseModel):
     position: int = Field(ge=0)
+    reuse_category: str = Field(min_length=1, max_length=200)
     category_name: str = Field(min_length=1, max_length=200)
     confidence: float = Field(ge=0, le=1)
     reason: str = Field(min_length=1, max_length=500)
@@ -81,7 +84,54 @@ def categorize_services(names: list[str], provider: str | None) -> dict[str, str
     return categories
 
 
-def _mock_assignments(items: list[ServiceToCategorize]) -> list[CategoryAssignment]:
+def _category_family(value: str) -> str | None:
+    normalized = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", value.casefold())
+        if not unicodedata.combining(character)
+    )
+    families = (
+        ("frameworks", ("framework", "bibliothe", "library", "frontend", "backend")),
+        ("web", ("web", "api", "http", "reverse proxy", "proxy")),
+        ("runtimes", ("langage", "runtime", "execution")),
+        ("data", ("donnee", "database", "base de", "stockage")),
+        ("security", ("securite", "acces", "auth", "identite")),
+        ("observability", ("observabilite", "monitoring", "operation", "journal")),
+        ("development", ("developpement", "devops", "build", "outils")),
+        ("systems", ("systeme", "infrastructure", "reseau", "serveur")),
+    )
+    return next(
+        (family for family, markers in families if any(marker in normalized for marker in markers)),
+        None,
+    )
+
+
+def _reuse_compatible_category(
+    suggested: str, existing_categories: list[str]
+) -> str | None:
+    suggested_key = suggested.strip().casefold()
+    exact = next(
+        (
+            category
+            for category in existing_categories
+            if category.strip().casefold() == suggested_key
+        ),
+        None,
+    )
+    if exact:
+        return exact
+    family = _category_family(suggested)
+    if family is None:
+        return None
+    return next(
+        (category for category in existing_categories if _category_family(category) == family),
+        None,
+    )
+
+
+def _mock_assignments(
+    items: list[ServiceToCategorize], existing_categories: list[str]
+) -> list[CategoryAssignment]:
     def category_for(name: str) -> str:
         lowered = name.casefold()
         if any(token in lowered for token in ("nginx", "apache", "iis", "http", "traefik")):
@@ -99,15 +149,20 @@ def _mock_assignments(items: list[ServiceToCategorize]) -> list[CategoryAssignme
             return "Sécurité et accès"
         return "Systèmes et infrastructure"
 
-    return [
-        CategoryAssignment(
-            key=item.key,
-            category_name=category_for(item.name),
-            confidence=0.9,
-            reason="Classification déterministe du provider de test.",
+    assignments: list[CategoryAssignment] = []
+    for item in items:
+        suggested = category_for(item.name)
+        assignments.append(
+            CategoryAssignment(
+                key=item.key,
+                category_name=(
+                    _reuse_compatible_category(suggested, existing_categories) or suggested
+                ),
+                confidence=0.9,
+                reason="Classification déterministe du provider de test.",
+            )
         )
-        for item in items
-    ]
+    return assignments
 
 
 async def categorize_with_ai(
@@ -116,7 +171,7 @@ async def categorize_with_ai(
     settings: Settings,
 ) -> list[CategoryAssignment]:
     if settings.ai_provider == "mock":
-        return _mock_assignments(items)
+        return _mock_assignments(items, existing_categories)
     if settings.ai_provider != "gemini" or not settings.gemini_api_key:
         raise CategorizationUnavailable(
             "Gemini n’est pas configuré. Ajoutez GEMINI_API_KEY et AI_PROVIDER=gemini."
@@ -143,9 +198,13 @@ async def categorize_with_ai(
         "éditeur ou service. Des technologies seulement voisines doivent partager une catégorie. "
         f"Pour ce lot, vise au maximum {target_category_count} catégories distinctes, "
         "sauf nécessité "
-        "technique évidente. Pour chaque élément, choisis exactement un libellé dans la liste "
-        "autorisée et réutilise à l’identique une catégorie existante lorsqu’elle est suffisamment "
-        "large. Apache, Nginx et les reverse proxies relèvent de 'Web et API'; React, Axios et les "
+        "technique évidente. Pour chaque élément, examine d'abord toutes les catégories "
+        "existantes. "
+        "Dans reuse_category, choisis obligatoirement le libellé exact d'une catégorie existante "
+        "dès qu'elle est fonctionnellement compatible, même si son nom diffère de la taxonomie. "
+        f"Utilise {NEW_CATEGORY_SENTINEL!r} uniquement si aucune catégorie existante ne convient. "
+        "Dans category_name, indique alors la famille large à créer. Apache, Nginx et les reverse "
+        "proxies relèvent de 'Web et API'; React, Axios et les "
         "frameworks relèvent de 'Frameworks et bibliothèques'. Ne modifie pas les positions et "
         "retourne chaque position une seule fois.\n\n"
         f"Catégories existantes: {json.dumps(existing_categories, ensure_ascii=False)}\n"
@@ -161,6 +220,14 @@ async def categorize_with_ai(
                     "type": "object",
                     "properties": {
                         "position": {"type": "integer"},
+                        "reuse_category": {
+                            "type": "string",
+                            "enum": [*existing_categories, NEW_CATEGORY_SENTINEL],
+                            "description": (
+                                "Catégorie existante exacte à réutiliser, ou sentinelle seulement "
+                                "si aucune catégorie existante n'est compatible."
+                            ),
+                        },
                         "category_name": {
                             "type": "string",
                             "enum": allowed_categories,
@@ -169,7 +236,13 @@ async def categorize_with_ai(
                         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                         "reason": {"type": "string"},
                     },
-                    "required": ["position", "category_name", "confidence", "reason"],
+                    "required": [
+                        "position",
+                        "reuse_category",
+                        "category_name",
+                        "confidence",
+                        "reason",
+                    ],
                 },
             }
         },
@@ -223,10 +296,19 @@ async def categorize_with_ai(
         for assignment in parsed.assignments
     ):
         raise CategorizationFailed("Gemini a retourné une catégorie non autorisée.")
+    reuse_choices = {*existing_categories, NEW_CATEGORY_SENTINEL}
+    if any(assignment.reuse_category not in reuse_choices for assignment in parsed.assignments):
+        raise CategorizationFailed("Gemini a retourné une catégorie existante non autorisée.")
     return [
         CategoryAssignment(
             key=item.key,
-            category_name=" ".join(by_position[position].category_name.split())[:200],
+            category_name=" ".join(
+                (
+                    by_position[position].category_name
+                    if by_position[position].reuse_category == NEW_CATEGORY_SENTINEL
+                    else by_position[position].reuse_category
+                ).split()
+            )[:200],
             confidence=by_position[position].confidence,
             reason=by_position[position].reason,
         )

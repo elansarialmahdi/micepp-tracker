@@ -9,12 +9,16 @@ const mocks = vi.hoisted(() => ({
   uploadServiceImport: vi.fn(),
   previewServiceImport: vi.fn(),
   confirmServiceImport: vi.fn(),
+  getCategories: vi.fn(),
+  createCategory: vi.fn(),
   previewServiceCategorization: vi.fn(),
   confirmServiceCategorization: vi.fn(),
 }));
 
 vi.mock("../api/imports", () => mocks);
 vi.mock("../api/inventory", () => ({
+  getCategories: mocks.getCategories,
+  createCategory: mocks.createCategory,
   previewServiceCategorization: mocks.previewServiceCategorization,
   confirmServiceCategorization: mocks.confirmServiceCategorization,
 }));
@@ -23,6 +27,14 @@ vi.mock("../auth/AuthProvider", () => ({
 }));
 
 beforeEach(() => {
+  mocks.getCategories.mockResolvedValue([
+    { id: "category-web", name: "Serveurs web" },
+    { id: "category-runtime", name: "Langages et runtimes" },
+  ]);
+  mocks.createCategory.mockResolvedValue({
+    id: "category-new",
+    name: "Nouvelle catégorie",
+  });
   mocks.uploadServiceImport.mockResolvedValue({
     id: "import-1",
     filename: "services.xlsx",
@@ -108,7 +120,7 @@ test("enchaîne upload, mapping, aperçu et confirmation", async () => {
   await waitFor(() => expect(mocks.previewServiceCategorization).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Confirmer la sélection" }));
   await waitFor(() => expect(mocks.confirmServiceCategorization).toHaveBeenCalledOnce());
-  expect(screen.getByLabelText("Catégorie de la ligne 2")).toHaveValue(
+  expect(screen.getByLabelText("Catégorie de la ligne 2")).toHaveTextContent(
     "Serveurs web",
   );
   fireEvent.click(screen.getByRole("button", { name: "Confirmer l’import" }));

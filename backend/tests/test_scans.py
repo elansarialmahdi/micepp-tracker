@@ -14,7 +14,9 @@ from app.models.auth import User
 from app.models.notification import AuditEvent
 from app.models.scan import ScanJob
 from app.models.service import Service
+from app.services.detectors import Detection
 from app.services.scan_security import ScanTargetRejected, validate_scan_target
+from app.services.scans import fuse_detections
 from tests.conftest import AuthTestContext
 
 
@@ -157,3 +159,34 @@ def test_private_network_requires_explicit_configuration() -> None:
     settings.allow_private_network_scans = True
     validated = asyncio.run(validate_scan_target("10.0.0.4", "ip", settings))
     assert validated.addresses == ("10.0.0.4",)
+
+
+def test_scan_fuses_same_name_and_version_across_detectors() -> None:
+    fused = fuse_detections(
+        [
+            Detection(
+                name="Nginx",
+                version="1.26.0",
+                source="nmap",
+                confidence=0.7,
+                port=80,
+                protocol="tcp",
+            ),
+            Detection(
+                name=" nginx ",
+                version="1.26.0",
+                vendor="F5",
+                product="nginx",
+                source="web",
+                confidence=0.95,
+                port=443,
+                protocol="https",
+            ),
+        ]
+    )
+
+    assert len(fused) == 1
+    assert fused[0].confidence == 0.95
+    assert fused[0].source == "nmap,web"
+    assert fused[0].vendor == "F5"
+    assert fused[0].port == 443

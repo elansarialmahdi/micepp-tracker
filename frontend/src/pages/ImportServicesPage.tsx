@@ -14,6 +14,7 @@ import {
   type ImportUpload,
 } from "../api/imports";
 import { useAuth } from "../auth/AuthProvider";
+import { CategoryPicker } from "../components/CategoryPicker";
 import { CustomSelect } from "../components/CustomSelect";
 import { AICategorizationReview } from "../features/categorization/AICategorizationReview";
 
@@ -304,68 +305,74 @@ export function ImportServicesPage({
               await queryClient.invalidateQueries({ queryKey: ["categories"] });
             }}
           />
-          <div className="table-wrapper">
-            <table className="service-table">
-              <thead>
-                <tr>
-                  <th>Importer</th>
-                  <th>Ligne</th>
-                  <th>Service</th>
-                  <th>Version</th>
-                  <th>Catégorie</th>
-                  <th>État</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.rows.map((row) => (
-                  <tr
-                    key={row.row_number}
-                    className={`import-row--${row.status}`}
-                  >
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`Importer la ligne ${row.row_number}`}
-                        disabled={row.status === "invalid"}
-                        checked={!ignoredRows.has(row.row_number)}
-                        onChange={() =>
-                          setIgnoredRows((current) => {
-                            const next = new Set(current);
-                            next.has(row.row_number)
-                              ? next.delete(row.row_number)
-                              : next.add(row.row_number);
-                            return next;
-                          })
-                        }
-                      />
-                    </td>
-                    <td>{row.row_number}</td>
-                    <td>{row.name || "—"}</td>
-                    <td>{row.version ?? "—"}</td>
-                    <td>
-                      <input
-                        aria-label={`Catégorie de la ligne ${row.row_number}`}
-                        value={
-                          categoryOverrides[row.row_number] ??
-                          row.category ??
-                          ""
-                        }
-                        placeholder="Non catégorisé"
-                        onChange={(event) =>
-                          setCategoryOverrides({
-                            ...categoryOverrides,
-                            [row.row_number]: event.target.value,
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      {row.status === "valid" ? "Valide" : row.errors.join(" ")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="import-preview-list" role="list" aria-label="Services à importer">
+            <div className="import-preview-list__head" aria-hidden="true">
+              <span>Importer</span>
+              <span>Ligne</span>
+              <span>Service</span>
+              <span>Version</span>
+              <span>Catégorie</span>
+              <span>État</span>
+            </div>
+            {preview.rows.map((row) => (
+              <article
+                key={row.row_number}
+                role="listitem"
+                className={`import-preview-row import-row--${row.status}`}
+              >
+                <label className="import-preview-row__check">
+                  <span className="import-preview-label">Importer</span>
+                  <input
+                    type="checkbox"
+                    aria-label={`Importer la ligne ${row.row_number}`}
+                    disabled={row.status === "invalid"}
+                    checked={!ignoredRows.has(row.row_number)}
+                    onChange={() =>
+                      setIgnoredRows((current) => {
+                        const next = new Set(current);
+                        next.has(row.row_number)
+                          ? next.delete(row.row_number)
+                          : next.add(row.row_number);
+                        return next;
+                      })
+                    }
+                  />
+                </label>
+                <div>
+                  <span className="import-preview-label">Ligne</span>
+                  <span>{row.row_number}</span>
+                </div>
+                <div>
+                  <span className="import-preview-label">Service</span>
+                  <strong>{row.name || "—"}</strong>
+                </div>
+                <div>
+                  <span className="import-preview-label">Version</span>
+                  <span>{row.version ?? "—"}</span>
+                </div>
+                <div className="import-preview-row__category">
+                  <span className="import-preview-label">Catégorie</span>
+                  <CategoryPicker
+                    platformId={platformId}
+                    value={categoryOverrides[row.row_number] ?? row.category ?? null}
+                    valueType="name"
+                    ariaLabel={`Catégorie de la ligne ${row.row_number}`}
+                    disabled={row.status === "invalid" || ignoredRows.has(row.row_number)}
+                    allowCreate={auth.hasPermission("service.create")}
+                    onChange={(value) =>
+                      setCategoryOverrides({
+                        ...categoryOverrides,
+                        [row.row_number]: value ?? "",
+                      })
+                    }
+                  />
+                </div>
+                <div className="import-preview-row__status">
+                  <span className="import-preview-label">État</span>
+                  <span>{row.status === "valid" ? "Valide" : row.errors.join(" ")}</span>
+                </div>
+              </article>
+            ))}
           </div>
           <div className="form-actions">
             <button type="button" onClick={() => setPreview(null)}>

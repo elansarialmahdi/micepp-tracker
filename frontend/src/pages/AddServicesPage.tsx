@@ -1,19 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, MinusCircle, Plus } from "lucide-react";
-import { useState } from "react";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router";
 import { z } from "zod";
 
 import { ApiError } from "../api/client";
-import {
-  createCategory,
-  createServices,
-  getCategories,
-} from "../api/inventory";
+import { createServices } from "../api/inventory";
 import { useAuth } from "../auth/AuthProvider";
-import { CustomSelect } from "../components/CustomSelect";
+import { CategoryPicker } from "../components/CategoryPicker";
 import { AICategorizationReview } from "../features/categorization/AICategorizationReview";
 
 const rowSchema = z.object({
@@ -54,11 +49,6 @@ export function AddServicesPage({
   const auth = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [categoryName, setCategoryName] = useState("");
-  const categories = useQuery({
-    queryKey: ["categories", "global"],
-    queryFn: ({ signal }) => getCategories(platformId, signal),
-  });
   const creation = useMutation({
     mutationFn: (items: FormValues["items"]) =>
       createServices(
@@ -69,9 +59,6 @@ export function AddServicesPage({
           category_id: item.category_id || null,
         })),
       ),
-  });
-  const categoryCreation = useMutation({
-    mutationFn: (name: string) => createCategory(platformId, name),
   });
   const { control, register, handleSubmit, formState, watch, setValue } =
     useForm<FormValues>({
@@ -89,15 +76,6 @@ export function AddServicesPage({
     );
   }
 
-  async function addCategory() {
-    if (!categoryName.trim()) return;
-    await categoryCreation.mutateAsync(categoryName.trim());
-    setCategoryName("");
-    await queryClient.invalidateQueries({
-      queryKey: ["categories"],
-    });
-  }
-
   const submit = handleSubmit(async (values) => {
     await creation.mutateAsync(values.items);
     await Promise.all([
@@ -112,6 +90,7 @@ export function AddServicesPage({
 
   return (
     <section
+      className="manual-services-page"
       aria-labelledby={embedded ? undefined : "add-services-title"}
       aria-label={embedded ? "Formulaire d’ajout manuel" : undefined}
     >
@@ -140,31 +119,6 @@ export function AddServicesPage({
           .
         </p>
       )}
-      <div className="inline-category-form">
-        <label htmlFor="wizard-category">Créer une catégorie (optionnel)</label>
-        <div className="search-control">
-          <input
-            id="wizard-category"
-            value={categoryName}
-            onChange={(event) => setCategoryName(event.target.value)}
-          />
-          <button
-            type="button"
-            onClick={() => void addCategory()}
-            disabled={categoryCreation.isPending}
-          >
-            Créer
-          </button>
-        </div>
-        {categoryCreation.error && (
-          <div className="form-error" role="alert">
-            {categoryCreation.error instanceof ApiError
-              ? categoryCreation.error.message
-              : "La création a échoué."}
-          </div>
-        )}
-      </div>
-
       <form className="bulk-service-form" onSubmit={submit} noValidate>
         {rows.fields.map((row, index) => (
           <fieldset key={row.id} className="service-form-row">
@@ -196,28 +150,25 @@ export function AddServicesPage({
                 control={control}
                 name={`items.${index}.category_id`}
                 render={({ field }) => (
-                  <CustomSelect
-                    id={`service-category-${index}`}
-                    value={field.value}
-                    onChange={field.onChange}
-                    options={[
-                      { value: "", label: "Non catégorisé" },
-                      ...(categories.data ?? []).map((category) => ({
-                        value: category.id,
-                        label: category.name,
-                      })),
-                    ]}
+                  <CategoryPicker
+                    platformId={platformId}
+                    value={field.value || null}
+                    valueType="id"
+                    ariaLabel={`Catégorie du service ${index + 1}`}
+                    onChange={(value) => field.onChange(value ?? "")}
                   />
                 )}
               />
             </div>
             <button
+              className="service-row-remove-button"
               type="button"
               onClick={() => rows.remove(index)}
               disabled={rows.fields.length === 1}
+              aria-label={`Retirer le service ${index + 1}`}
+              data-tooltip="Retirer"
             >
               <MinusCircle aria-hidden="true" />
-              Retirer la ligne
             </button>
           </fieldset>
         ))}

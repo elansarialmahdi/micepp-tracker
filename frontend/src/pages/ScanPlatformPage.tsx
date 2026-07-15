@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Radar } from "lucide-react";
-import { useState } from "react";
+import {
+  ArrowLeft,
+  CircleAlert,
+  LoaderCircle,
+  Radar,
+  X,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
 import { ApiError } from "../api/client";
@@ -10,12 +16,30 @@ import {
   confirmScan,
   getScan,
   launchScan,
+  type DetectedService,
   type ScanConfirmationItem,
   type ScanJob,
 } from "../api/scans";
 import { useAuth } from "../auth/AuthProvider";
+import { CategoryPicker } from "../components/CategoryPicker";
 import { CustomSelect } from "../components/CustomSelect";
 import { AICategorizationReview } from "../features/categorization/AICategorizationReview";
+
+function detectionKey(item: DetectedService): string {
+  return `${item.detected_name.trim().toLocaleLowerCase("fr-FR")}\u0000${
+    item.detected_version?.trim().toLocaleLowerCase("fr-FR") ?? ""
+  }`;
+}
+
+export function dedupeScanDetections(items: DetectedService[]): DetectedService[] {
+  const unique = new Map<string, DetectedService>();
+  items.forEach((item) => {
+    const key = detectionKey(item);
+    const current = unique.get(key);
+    if (!current || item.confidence > current.confidence) unique.set(key, item);
+  });
+  return [...unique.values()];
+}
 
 export function ScanPlatformPage({
   embedded = false,
@@ -28,12 +52,12 @@ export function ScanPlatformPage({
   const auth = useAuth();
   const queryClient = useQueryClient();
   const [scanId, setScanId] = useState<string | null>(null);
+  const [target, setTarget] = useState("");
+  const [scanType, setScanType] = useState<"full" | "ports" | "web">("full");
   const platform = useQuery({
     queryKey: ["platform", platformId],
     queryFn: ({ signal }) => getPlatform(platformId, signal),
   });
-  const [target, setTarget] = useState("");
-  const [scanType, setScanType] = useState<"full" | "ports" | "web">("full");
   const launch = useMutation({
     mutationFn: () =>
       launchScan(platformId, {
@@ -59,35 +83,36 @@ export function ScanPlatformPage({
     onSuccess: (job) => queryClient.setQueryData(["scan", job.id], job),
   });
 
-  if (!auth.hasPermission("platform.scan"))
+  if (!auth.hasPermission("platform.scan")) {
     return (
       <div className="form-error" role="alert">
         Vous n’avez pas l’autorisation de lancer un scan.
       </div>
     );
+  }
+
   const job = scan.data ?? launch.data;
   const error = launch.error ?? scan.error ?? cancel.error;
 
   return (
     <section
-      className="scan-page"
+      className={`scan-page${embedded ? " scan-page--embedded" : ""}`}
       aria-labelledby={embedded ? undefined : "scan-title"}
       aria-label={embedded ? "Assistant de scan des services" : undefined}
     >
       {!embedded && (
-        <>
-          <p className="eyebrow">Détection contrôlée</p>
-          <h1 id="scan-title">
-            Scanner {platform.data?.name ?? "la plateforme"}
-          </h1>
-        </>
+        <header className="scan-page__header">
+          <div>
+            <p className="eyebrow">Inventaire automatique</p>
+            <h1 id="scan-title">Scanner {platform.data?.name ?? "la plateforme"}</h1>
+          </div>
+          <Link className="back-link" to={`/platforms/${platformId}`}>
+            <ArrowLeft aria-hidden="true" />
+            Retour à la plateforme
+          </Link>
+        </header>
       )}
-      {!embedded && (
-        <Link className="back-link" to={`/platforms/${platformId}`}>
-          <ArrowLeft aria-hidden="true" />
-          Retour à la plateforme
-        </Link>
-      )}
+
       {!job && (
         <form
           className="scan-form"
@@ -96,22 +121,17 @@ export function ScanPlatformPage({
             launch.mutate();
           }}
         >
-          <div className="form-field">
-            <label htmlFor="scan-target">Cible temporaire</label>
+          <div className="form-field scan-form__target">
+            <label htmlFor="scan-target">Cible</label>
             <input
               id="scan-target"
               value={target}
-              placeholder={
-                platform.data?.normalized_target ?? "Cible obligatoire"
-              }
+              placeholder={platform.data?.normalized_target ?? "Cible obligatoire"}
               onChange={(event) => setTarget(event.target.value)}
             />
-            <small>
-              Laissez vide pour utiliser la cible enregistrée de la plateforme.
-            </small>
           </div>
           <div className="form-field">
-            <label htmlFor="scan-type">Type de scan</label>
+            <label htmlFor="scan-type">Périmètre</label>
             <CustomSelect
               id="scan-type"
               value={scanType}
@@ -123,22 +143,21 @@ export function ScanPlatformPage({
               ]}
             />
           </div>
-          <button
-            className="primary-button"
-            type="submit"
-            disabled={launch.isPending}
-          >
+          <button className="primary-button scan-launch-button" type="submit" disabled={launch.isPending}>
             <Radar aria-hidden="true" />
             {launch.isPending ? "Lancement…" : "Lancer le scan"}
           </button>
         </form>
       )}
+
       {error && (
         <div className="form-error" role="alert">
           {error instanceof ApiError ? error.message : "Le scan a échoué."}
         </div>
       )}
-      {job && <ScanProgress job={job} onCancel={() => cancel.mutate()} />}
+      {job && job.status !== "succeeded" && (
+        <ScanProgress job={job} onCancel={() => cancel.mutate()} />
+      )}
       {job?.status === "succeeded" && (
         <ScanResults job={job} platformId={platformId} onClose={onClose} />
       )}
@@ -146,31 +165,47 @@ export function ScanPlatformPage({
   );
 }
 
-function ScanProgress({
-  job,
-  onCancel,
-}: {
-  job: ScanJob;
-  onCancel: () => void;
-}) {
+function ScanProgress({ job, onCancel }: { job: ScanJob; onCancel: () => void }) {
+  const active = ["queued", "running"].includes(job.status);
+  const step = job.current_step
+    ? `${job.current_step.charAt(0).toLocaleUpperCase("fr-FR")}${job.current_step.slice(1)}`
+    : "Préparation du scan";
+
   return (
-    <section className="scan-progress" aria-labelledby="scan-progress-title">
-      <h2 id="scan-progress-title">Progression</h2>
-      <progress max="100" value={job.progress}>
+    <section
+      className={`scan-progress scan-progress--${job.status}`}
+      aria-labelledby="scan-progress-title"
+    >
+      <div className="scan-progress__header">
+        <span className="scan-progress__icon" aria-hidden="true">
+          {job.status === "failed" ? (
+            <CircleAlert />
+          ) : (
+            <LoaderCircle className={active ? "is-spinning" : undefined} />
+          )}
+        </span>
+        <div>
+          <p className="eyebrow">{job.status === "queued" ? "Préparation" : "Analyse en cours"}</p>
+          <h2 id="scan-progress-title">{step}</h2>
+        </div>
+        <strong>{job.progress}%</strong>
+      </div>
+      <progress max="100" value={job.progress} aria-label={`Progression : ${job.progress} %`}>
         {job.progress}%
       </progress>
-      <p role="status">
-        {job.progress}% — {job.current_step}
-      </p>
+      <footer className="scan-progress__footer">
+        <span role="status">{job.target}</span>
+        {active && (
+          <button type="button" onClick={onCancel}>
+            <X aria-hidden="true" />
+            Annuler
+          </button>
+        )}
+      </footer>
       {job.status === "failed" && (
         <div className="form-error" role="alert">
           {job.sanitized_error ?? "Le scan a échoué."}
         </div>
-      )}
-      {["queued", "running"].includes(job.status) && (
-        <button type="button" onClick={onCancel}>
-          Annuler le scan
-        </button>
       )}
     </section>
   );
@@ -185,9 +220,11 @@ function ScanResults({
   platformId: string;
   onClose?: () => void;
 }) {
+  const auth = useAuth();
   const queryClient = useQueryClient();
+  const detections = useMemo(() => dedupeScanDetections(job.detections), [job.detections]);
   const [items, setItems] = useState<ScanConfirmationItem[]>(() =>
-    job.detections.map((item) => ({
+    detections.map((item) => ({
       detected_service_id: item.id,
       selected: item.selected_for_import,
       name: item.detected_name,
@@ -198,130 +235,152 @@ function ScanResults({
   const confirmation = useMutation({
     mutationFn: () => confirmScan(job.id, items),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["services", platformId],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["categories", platformId, "used"],
-      });
+      await queryClient.invalidateQueries({ queryKey: ["services", platformId] });
+      await queryClient.invalidateQueries({ queryKey: ["categories"] });
     },
   });
-  const update = (index: number, changes: Partial<ScanConfirmationItem>) =>
+  const update = (id: string, changes: Partial<ScanConfirmationItem>) =>
     setItems((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, ...changes } : item,
+      current.map((item) =>
+        item.detected_service_id === id ? { ...item, ...changes } : item,
       ),
     );
+  const selectedCount = items.filter((item) => item.selected).length;
+  const duplicateCount = job.detections.length - detections.length;
+
   return (
     <section className="scan-results" aria-labelledby="scan-results-title">
-      <h2 id="scan-results-title">Services détectés</h2>
-      <p>Corrigez les suggestions avant de les ajouter à l’inventaire.</p>
-      <AICategorizationReview
-        platformId={platformId}
-        items={items
-          .filter((item) => item.selected)
-          .map((item) => ({
-            key: item.detected_service_id,
-            name: item.name,
-            version: item.version,
-          }))}
-        disabled={!items.some((item) => item.selected)}
-        onConfirmed={async (suggestions) => {
-          const byId = new Map(
-            suggestions.map((item) => [item.key, item.category?.name ?? null]),
+      <header className="scan-results__header">
+        <div>
+          <p className="eyebrow">Inventaire détecté</p>
+          <h2 id="scan-results-title">Services détectés</h2>
+          <p>
+            {items.length} service{items.length > 1 ? "s" : ""} unique{items.length > 1 ? "s" : ""}
+            {duplicateCount > 0 ? `, ${duplicateCount} doublon${duplicateCount > 1 ? "s" : ""} fusionné${duplicateCount > 1 ? "s" : ""}` : ""}
+          </p>
+        </div>
+        <AICategorizationReview
+          platformId={platformId}
+          items={items
+            .filter((item) => item.selected)
+            .map((item) => ({
+              key: item.detected_service_id,
+              name: item.name,
+              version: item.version,
+            }))}
+          disabled={!selectedCount}
+          onConfirmed={async (suggestions) => {
+            const byId = new Map(
+              suggestions.map((item) => [item.key, item.category?.name ?? null]),
+            );
+            setItems((current) =>
+              current.map((item) => ({
+                ...item,
+                category: byId.has(item.detected_service_id)
+                  ? byId.get(item.detected_service_id) ?? null
+                  : item.category,
+              })),
+            );
+            await queryClient.invalidateQueries({ queryKey: ["categories"] });
+          }}
+        />
+      </header>
+
+      <div className="scan-service-list" role="list" aria-label="Services à ajouter">
+        <div className="scan-service-list__head" aria-hidden="true">
+          <span>Ajouter</span>
+          <span>Service</span>
+          <span>Version</span>
+          <span>Catégorie</span>
+        </div>
+        {items.map((item) => {
+          return (
+            <article
+              className={`scan-service-row${item.selected ? " scan-service-row--selected" : ""}`}
+              role="listitem"
+              key={item.detected_service_id}
+            >
+              <label className="scan-service-row__select">
+                <span className="scan-field-label">Ajouter</span>
+                <input
+                  aria-label={`Ajouter ${item.name}`}
+                  type="checkbox"
+                  checked={item.selected}
+                  onChange={(event) =>
+                    update(item.detected_service_id, { selected: event.target.checked })
+                  }
+                />
+              </label>
+              <label className="scan-result-field">
+                <span className="scan-field-label">Service</span>
+                <input
+                  aria-label={`Nom ${item.name}`}
+                  value={item.name}
+                  disabled={!item.selected}
+                  onChange={(event) =>
+                    update(item.detected_service_id, { name: event.target.value })
+                  }
+                />
+              </label>
+              <label className="scan-result-field">
+                <span className="scan-field-label">Version</span>
+                <input
+                  aria-label={`Version ${item.name}`}
+                  value={item.version ?? ""}
+                  disabled={!item.selected}
+                  placeholder="Non renseignée"
+                  onChange={(event) =>
+                    update(item.detected_service_id, { version: event.target.value || null })
+                  }
+                />
+              </label>
+              <div className="scan-result-field">
+                <span className="scan-field-label">Catégorie</span>
+                <CategoryPicker
+                  platformId={platformId}
+                  ariaLabel={`Catégorie ${item.name}`}
+                  value={item.category}
+                  valueType="name"
+                  disabled={!item.selected}
+                  allowCreate={auth.hasPermission("service.create")}
+                  onChange={(category) =>
+                    update(item.detected_service_id, { category })
+                  }
+                />
+              </div>
+            </article>
           );
-          setItems((current) =>
-            current.map((item) => ({
-              ...item,
-              category: byId.has(item.detected_service_id)
-                ? byId.get(item.detected_service_id) ?? null
-                : item.category,
-            })),
-          );
-          await queryClient.invalidateQueries({ queryKey: ["categories"] });
-        }}
-      />
-      <div className="table-wrapper">
-        <table className="service-table">
-          <thead>
-            <tr>
-              <th>Ajouter</th>
-              <th>Nom</th>
-              <th>Version</th>
-              <th>Catégorie</th>
-            </tr>
-          </thead>
-          <tbody>
-            {job.detections.map((detection, index) => (
-              <tr key={detection.id}>
-                <td>
-                  <input
-                    aria-label={`Ajouter ${detection.detected_name}`}
-                    type="checkbox"
-                    checked={items[index].selected}
-                    onChange={(event) =>
-                      update(index, { selected: event.target.checked })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    aria-label={`Nom ${detection.detected_name}`}
-                    value={items[index].name}
-                    onChange={(event) =>
-                      update(index, { name: event.target.value })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    aria-label={`Version ${detection.detected_name}`}
-                    value={items[index].version ?? ""}
-                    onChange={(event) =>
-                      update(index, { version: event.target.value || null })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    aria-label={`Catégorie ${detection.detected_name}`}
-                    value={items[index].category ?? ""}
-                    placeholder="Non catégorisé"
-                    onChange={(event) =>
-                      update(index, { category: event.target.value || null })
-                    }
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        })}
       </div>
+
       {confirmation.error && (
         <div className="form-error" role="alert">
-          La confirmation a échoué.
+          {confirmation.error instanceof ApiError
+            ? confirmation.error.message
+            : "La confirmation a échoué."}
         </div>
       )}
       {confirmation.data ? (
-        <div className="success-message" role="status">
-          {confirmation.data.created} service(s) ajouté(s).{" "}
+        <div className="success-message scan-results__success" role="status">
+          <span>{confirmation.data.created} service(s) ajouté(s).</span>
           {onClose ? (
-            <button className="link-button" type="button" onClick={onClose}>
-              Terminer
-            </button>
+            <button type="button" onClick={onClose}>Terminer</button>
           ) : (
             <Link to={`/platforms/${platformId}`}>Retour à la plateforme</Link>
           )}
         </div>
       ) : (
-        <button
-          className="primary-button"
-          type="button"
-          onClick={() => confirmation.mutate()}
-          disabled={confirmation.isPending}
-        >
-          Confirmer les services sélectionnés
-        </button>
+        <footer className="scan-results__actions">
+          <span>{selectedCount} service{selectedCount > 1 ? "s" : ""} sélectionné{selectedCount > 1 ? "s" : ""}</span>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => confirmation.mutate()}
+            disabled={confirmation.isPending || !selectedCount}
+          >
+            {confirmation.isPending ? "Ajout en cours…" : "Confirmer les services"}
+          </button>
+        </footer>
       )}
     </section>
   );

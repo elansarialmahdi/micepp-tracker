@@ -13,7 +13,10 @@ type ViewportMenuPortalProps = {
   children: ReactNode;
   className?: string;
   ariaLabel?: string;
+  id?: string;
+  matchAnchorWidth?: boolean;
   onRequestClose: () => void;
+  role?: "menu" | "listbox";
 };
 
 export function ViewportMenuPortal({
@@ -21,7 +24,10 @@ export function ViewportMenuPortal({
   children,
   className = "",
   ariaLabel,
+  id,
+  matchAnchorWidth = false,
   onRequestClose,
+  role = "menu",
 }: ViewportMenuPortalProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({
@@ -29,6 +35,7 @@ export function ViewportMenuPortal({
     top: 0,
     ready: false,
     submenuSide: "right" as "left" | "right",
+    width: undefined as number | undefined,
   });
 
   useLayoutEffect(() => {
@@ -40,6 +47,8 @@ export function ViewportMenuPortal({
       const edge = 8;
       const gap = 5;
       const anchorRect = anchor.getBoundingClientRect();
+      const targetWidth = matchAnchorWidth ? anchorRect.width : undefined;
+      if (targetWidth) menu.style.width = `${targetWidth}px`;
       const menuRect = menu.getBoundingClientRect();
       let left = anchorRect.right - menuRect.width;
       let top = anchorRect.bottom + gap;
@@ -59,6 +68,7 @@ export function ViewportMenuPortal({
         top,
         ready: true,
         submenuSide: roomForSubmenuOnRight ? "right" : "left",
+        width: targetWidth,
       });
     }
 
@@ -69,7 +79,7 @@ export function ViewportMenuPortal({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [anchorRef]);
+  }, [anchorRef, matchAnchorWidth]);
 
   useEffect(() => {
     function closeOutside(event: PointerEvent) {
@@ -97,13 +107,15 @@ export function ViewportMenuPortal({
   return createPortal(
     <div
       ref={menuRef}
+      id={id}
       className={`viewport-menu ${className}`.trim()}
-      role="menu"
+      role={role}
       aria-label={ariaLabel}
       data-submenu-side={position.submenuSide}
       style={{
         left: position.left,
         top: position.top,
+        width: position.width,
         visibility: position.ready ? "visible" : "hidden",
       }}
     >
