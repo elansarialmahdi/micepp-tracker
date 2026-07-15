@@ -4,6 +4,11 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class NotificationPlatformResponse(BaseModel):
+    id: UUID
+    name: str
+
+
 class NotificationResponse(BaseModel):
     id: UUID
     type: str
@@ -12,7 +17,11 @@ class NotificationResponse(BaseModel):
     severity: str
     vulnerability_id: UUID | None
     service_id: UUID | None
+    service_name: str | None
+    service_version: str | None
+    threat_identifier: str | None
     platform_ids: list[UUID]
+    platforms: list[NotificationPlatformResponse]
     created_at: datetime
     read_at: datetime | None
     is_read: bool

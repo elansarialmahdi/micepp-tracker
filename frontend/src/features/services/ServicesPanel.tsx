@@ -2,10 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronRight,
+  Filter,
   FolderPlus,
   MoreHorizontal,
-  Search,
-  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -28,7 +27,7 @@ import {
 import { useAuth } from "../../auth/AuthProvider";
 import { CustomSelect } from "../../components/CustomSelect";
 import { ModalPortal } from "../../components/ModalPortal";
-import { useOutsideClick } from "../../hooks/useOutsideClick";
+import { ViewportMenuPortal } from "../../components/ViewportMenuPortal";
 
 function ServiceEditModal({
   service,
@@ -170,10 +169,6 @@ export function ServicesPanel({
     "vulnerability" | "sort" | "category" | null
   >(null);
   const filterRef = useRef<HTMLDivElement>(null);
-  useOutsideClick(filterRef, filtersOpen, () => {
-    setFiltersOpen(false);
-    setFilterSubmenu(null);
-  });
   useEffect(() => {
     if (!openMenu) return;
     const closeMenu = (event: PointerEvent) => {
@@ -309,50 +304,107 @@ export function ServicesPanel({
         )}
       </div>
       {showCategories && (
-        <div className="category-manager category-manager--popover" role="dialog" aria-labelledby="categories-title">
-          <div className="category-manager__header">
-            <h3 id="categories-title">Catégories de la plateforme</h3>
-            <button
-              type="button"
-              aria-label="Fermer les catégories"
-              data-tooltip="Fermer"
-              data-tooltip-placement="bottom"
-              onClick={closeCategories}
+        <ModalPortal>
+          <div
+            className="modal-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeCategories();
+            }}
+          >
+            <section
+              className="settings-modal category-management-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="categories-title"
             >
-              <X aria-hidden="true" />
-            </button>
-          </div>
-          <form onSubmit={(event) => void addCategory(event)}>
-            <label htmlFor="new-category">Nouvelle catégorie</label>
-            <div className="search-control">
-              <input
-                id="new-category"
-                value={categoryName}
-                onChange={(event) => setCategoryName(event.target.value)}
-              />
-              <button type="submit" disabled={categoryCreation.isPending}>
-                Créer
-              </button>
-            </div>
-          </form>
-          <ul className="category-list">
-            {categories.data?.map((item) => (
-              <li key={item.id}>
-                <span>{item.name}</span>
-                {auth.hasPermission("service.archive") && (
-                  <button
-                    type="button"
-                    onClick={() => void removeCategory(item.id)}
-                    aria-label={`Supprimer ${item.name}`}
-                    data-tooltip={`Supprimer ${item.name}`}
-                  >
-                    <Trash2 aria-hidden="true" />
-                  </button>
+              <header className="settings-modal__header">
+                <div>
+                  <p className="eyebrow">Organisation des services</p>
+                  <h2 id="categories-title">Catégories de la plateforme</h2>
+                </div>
+                <button
+                  className="panel-icon-button"
+                  type="button"
+                  aria-label="Fermer les catégories"
+                  data-tooltip="Fermer"
+                  data-tooltip-placement="left"
+                  onClick={closeCategories}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </header>
+
+              <div className="category-management-modal__body">
+                <form
+                  className="category-create-form"
+                  onSubmit={(event) => void addCategory(event)}
+                >
+                  <label htmlFor="new-category">Nouvelle catégorie</label>
+                  <div className="search-control">
+                    <input
+                      id="new-category"
+                      value={categoryName}
+                      onChange={(event) => setCategoryName(event.target.value)}
+                    />
+                    <button type="submit" disabled={categoryCreation.isPending}>
+                      Créer
+                    </button>
+                  </div>
+                </form>
+
+                {categoryCreation.error && (
+                  <div className="form-error" role="alert">
+                    {categoryCreation.error instanceof ApiError
+                      ? categoryCreation.error.message
+                      : "La création a échoué."}
+                  </div>
                 )}
-              </li>
-            ))}
-          </ul>
-        </div>
+                {categoryArchive.error && (
+                  <div className="form-error" role="alert">
+                    {categoryArchive.error instanceof ApiError
+                      ? categoryArchive.error.message
+                      : "La suppression a échoué."}
+                  </div>
+                )}
+
+                <div className="category-management-modal__list-heading">
+                  <h3>Toutes les catégories</h3>
+                  <span>{categories.data?.length ?? 0}</span>
+                </div>
+                {categories.isPending && <p role="status">Chargement des catégories…</p>}
+                {categories.isError && (
+                  <div className="form-error" role="alert">
+                    Impossible de charger les catégories.
+                  </div>
+                )}
+                {categories.data?.length === 0 && (
+                  <p className="empty-state">Aucune catégorie.</p>
+                )}
+                <ul className="category-list category-management-modal__list">
+                  {categories.data?.map((item) => (
+                    <li key={item.id}>
+                      <span>{item.name}</span>
+                      {auth.hasPermission("service.archive") && (
+                        <button
+                          className="panel-icon-button"
+                          type="button"
+                          onClick={() => void removeCategory(item.id)}
+                          aria-label={`Supprimer ${item.name}`}
+                          data-tooltip={`Supprimer ${item.name}`}
+                          data-tooltip-placement="left"
+                          disabled={categoryArchive.isPending}
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          </div>
+        </ModalPortal>
       )}
       <form
         className="service-filters service-filters--unified"
@@ -374,18 +426,28 @@ export function ServicesPanel({
           <button
             className="filter-trigger"
             type="button"
+            aria-label="Filtrer"
+            data-active-filter-count={activeFilterCount}
             aria-expanded={filtersOpen}
             onClick={() => {
               setFiltersOpen((open) => !open);
               setFilterSubmenu(null);
             }}
           >
-            <SlidersHorizontal aria-hidden="true" />
-            Filtrer{activeFilterCount ? ` (${activeFilterCount})` : ""}
+            <Filter aria-hidden="true" />
+            Filtrer par
             <ChevronDown aria-hidden="true" />
           </button>
           {filtersOpen && (
-            <div className="custom-dropdown__menu filter-tree" role="menu">
+            <ViewportMenuPortal
+              anchorRef={filterRef}
+              className="custom-dropdown__menu filter-tree"
+              ariaLabel="Filtres des services"
+              onRequestClose={() => {
+                setFiltersOpen(false);
+                setFilterSubmenu(null);
+              }}
+            >
               <div
                 className="filter-menu__item"
                 onMouseEnter={() => setFilterSubmenu("vulnerability")}
@@ -500,10 +562,9 @@ export function ServicesPanel({
                   </div>
                 )}
               </div>
-            </div>
+            </ViewportMenuPortal>
           )}
         </div>
-        <Search aria-hidden="true" />
         </div>
       </form>
       {services.isPending && <p role="status">Chargement des services…</p>}
@@ -524,13 +585,7 @@ export function ServicesPanel({
               <tr>
                 <th>Nom du service</th>
                 <th>Version</th>
-                <th>
-                  Vulnérabilité{" "}
-                  <small>
-                    {services.data.safe_total ?? 0} sans vulnérabilité connue,{" "}
-                    {services.data.unverified_total ?? 0} non vérifié(s)
-                  </small>
-                </th>
+                <th>Vulnérabilité</th>
               </tr>
             </thead>
             <tbody>
@@ -558,6 +613,7 @@ export function ServicesPanel({
                       )}
                       <div className="action-menu">
                         <button
+                          className="service-row-action"
                           type="button"
                           aria-label={`Actions pour ${service.name}`}
                           data-tooltip={`Actions pour ${service.name}`}

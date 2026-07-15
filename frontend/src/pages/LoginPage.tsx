@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { ToggleSwitch } from "../components/ToggleSwitch";
 
 const schema = z.object({
   username: z.string().trim().min(1, "L’identifiant est obligatoire."),
@@ -60,10 +61,14 @@ export function LoginPage() {
             <input id="password" placeholder="Mot de passe" type="password" autoComplete="current-password" {...register("password")} />
             {formState.errors.password && <p className="field-error">{formState.errors.password.message}</p>}
           </div>
-          <label className="checkbox-field">
-            <input type="checkbox" {...register("remember_me")} />
-            <span>Rester connecté</span>
-          </label>
+          <div className="checkbox-field">
+            <ToggleSwitch
+              id="remember-me"
+              aria-label="Rester connecté"
+              {...register("remember_me")}
+            />
+            <label htmlFor="remember-me">Rester connecté</label>
+          </div>
           {serverError && <div className="form-error" role="alert">{serverError}</div>}
           <button className="primary-button" type="submit" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? "Connexion…" : "Se connecter"}

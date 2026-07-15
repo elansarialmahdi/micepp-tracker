@@ -19,6 +19,16 @@ import {
 import { useAuth } from "../auth/AuthProvider";
 import { CustomSelect } from "../components/CustomSelect";
 
+export function formatDateTime(value: string | null): string {
+  if (!value) return "Jamais";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date inconnue";
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 function ServiceEditForm({
   service,
   categories,
@@ -197,7 +207,9 @@ export function ServiceDetailPage() {
   }
 
   return (
-    <section aria-labelledby="service-title">
+    <section className="service-detail-page" aria-labelledby="service-title">
+      <div className="service-detail-columns">
+        <div className="service-overview-panel">
       <Link className="back-link back-link--button" to={`/platforms/${service.data.platform_id}`}>
         <ArrowLeft aria-hidden="true" />
         Retour à la plateforme
@@ -210,27 +222,41 @@ export function ServiceDetailPage() {
         <div className="form-actions">
           {!service.data.archived_at &&
             auth.hasPermission("service.update") && (
-              <button type="button" onClick={() => setEditing(true)}>
+              <button
+                className="service-action-button"
+                type="button"
+                onClick={() => setEditing(true)}
+                aria-label="Modifier le service"
+                data-tooltip="Modifier"
+                data-tooltip-placement="bottom"
+              >
                 <Pencil aria-hidden="true" />
-                Modifier
               </button>
             )}
           {!service.data.archived_at &&
             auth.hasPermission("service.archive") && (
-              <button type="button" onClick={() => void archiveCurrent()}>
+              <button
+                className="service-action-button"
+                type="button"
+                onClick={() => void archiveCurrent()}
+                aria-label="Supprimer le service"
+                data-tooltip="Supprimer"
+                data-tooltip-placement="bottom"
+              >
                 <Trash2 aria-hidden="true" />
-                Supprimer
               </button>
             )}
           {!service.data.archived_at && auth.hasPermission("service.scan") && (
             <button
-              className="primary-button"
+              className="service-action-button"
               type="button"
               disabled={check.isPending}
               onClick={() => check.mutate()}
+              aria-label={check.isPending ? "Vérification en cours" : "Vérifier automatiquement"}
+              data-tooltip={check.isPending ? "Vérification en cours" : "Vérifier automatiquement"}
+              data-tooltip-placement="bottom"
             >
-              <RefreshCw aria-hidden="true" />
-              {check.isPending ? "Vérification…" : "Vérifier automatiquement"}
+              <RefreshCw className={check.isPending ? "is-spinning" : undefined} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -246,7 +272,15 @@ export function ServiceDetailPage() {
         </div>
         <div>
           <dt>Dernière vérification</dt>
-          <dd>{service.data.last_checked_at ?? "Jamais"}</dd>
+          <dd>
+            {service.data.last_checked_at ? (
+              <time dateTime={service.data.last_checked_at}>
+                {formatDateTime(service.data.last_checked_at)}
+              </time>
+            ) : (
+              "Jamais"
+            )}
+          </dd>
         </div>
       </dl>
       {check.isError && (
@@ -304,8 +338,9 @@ export function ServiceDetailPage() {
           </p>
         )}
       </section>
+        </div>
       <section
-        className="vulnerability-panel"
+        className="vulnerability-panel service-vulnerabilities-panel"
         aria-labelledby="vulnerabilities-title"
       >
         <div className="section-header">
@@ -362,9 +397,11 @@ export function ServiceDetailPage() {
                         {item.severity ?? "inconnue"} {item.cvss_score ?? "—"}
                       </span>
                     </td>
-                    <td>
+                    <td className="vulnerability-description-cell">
+                      <span className="vulnerability-description">
                       {item.description.slice(0, 180)}
                       {item.description.length > 180 ? "…" : ""}
+                      </span>
                     </td>
                     <td>
                       <Link to={`/vulnerabilities/${item.link_id}`}>Voir</Link>
@@ -376,6 +413,7 @@ export function ServiceDetailPage() {
           </div>
         )}
       </section>
+      </div>
       {editing && (
         <div
           className="modal-backdrop"

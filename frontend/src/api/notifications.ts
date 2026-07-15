@@ -8,7 +8,11 @@ export type NotificationItem = {
   severity: "critical" | "high" | "medium" | "low" | "info";
   vulnerability_id: string | null;
   service_id: string | null;
+  service_name: string | null;
+  service_version: string | null;
+  threat_identifier: string | null;
   platform_ids: string[];
+  platforms: Array<{ id: string; name: string }>;
   created_at: string;
   read_at: string | null;
   is_read: boolean;
@@ -22,8 +26,12 @@ export type NotificationList = {
   page_size: number;
 };
 
-export function getNotifications(signal?: AbortSignal): Promise<NotificationList> {
-  return apiRequest<NotificationList>("/v1/notifications", { signal }, { authenticated: true });
+export function getNotifications(signal?: AbortSignal, hidden = false): Promise<NotificationList> {
+  return apiRequest<NotificationList>(
+    `/v1/notifications${hidden ? "?hidden=true" : ""}`,
+    { signal },
+    { authenticated: true },
+  );
 }
 
 export function readNotification(id: string): Promise<NotificationItem> {

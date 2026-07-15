@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import require_permissions
@@ -116,7 +116,7 @@ async def update_settings(
 )
 async def run_now(request: Request, db: DBSession, user: Editor) -> ProtectionJob:
     settings = request.app.state.settings
-    await recover_stale_job(db, settings)
+    await recover_stale_job(db, settings, request.app.state.redis)
     await enforce_expensive_limit(
         request,
         scope="realtime-run",
@@ -130,10 +130,15 @@ async def run_now(request: Request, db: DBSession, user: Editor) -> ProtectionJo
             "PROTECTION_ALREADY_RUNNING",
             "Une vérification globale est déjà en cours.",
         )
+    total_services = int(
+        await db.scalar(select(func.count(Service.id)).where(Service.archived_at.is_(None)))
+        or 0
+    )
     job = ProtectionJob(
         trigger="manual",
         requested_by=user.id,
         status="queued",
+        total_services=total_services,
         idempotency_key=f"manual:{request.state.request_id}",
         error_summary=[],
     )
@@ -181,7 +186,11 @@ async def current_job(
     db: DBSession,
     _user: Reader,
 ) -> ProtectionJobResponse | None:
-    await recover_stale_job(db, request.app.state.settings)
+    await recover_stale_job(
+        db,
+        request.app.state.settings,
+        request.app.state.redis,
+    )
     job = await latest_job(db)
     if job is None:
         return None

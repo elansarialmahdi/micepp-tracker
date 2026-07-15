@@ -11,6 +11,17 @@ from app.core.config import Settings
 
 logger = logging.getLogger("micepp.categorization")
 
+BROAD_CATEGORY_TAXONOMY = (
+    "Web et API",
+    "Frameworks et bibliothèques",
+    "Langages et runtimes",
+    "Données et stockage",
+    "Systèmes et infrastructure",
+    "Sécurité et accès",
+    "Observabilité et opérations",
+    "Outils de développement",
+)
+
 
 class CategorizationUnavailable(RuntimeError):
     pass
@@ -73,15 +84,20 @@ def categorize_services(names: list[str], provider: str | None) -> dict[str, str
 def _mock_assignments(items: list[ServiceToCategorize]) -> list[CategoryAssignment]:
     def category_for(name: str) -> str:
         lowered = name.casefold()
-        if any(token in lowered for token in ("nginx", "apache", "iis", "http")):
-            return "Serveurs web"
+        if any(token in lowered for token in ("nginx", "apache", "iis", "http", "traefik")):
+            return "Web et API"
+        if any(
+            token in lowered
+            for token in ("react", "angular", "vue", "axios", "express", "django", "spring")
+        ):
+            return "Frameworks et bibliothèques"
         if any(token in lowered for token in ("php", "python", "node", "java", "ruby")):
             return "Langages et runtimes"
         if any(token in lowered for token in ("postgres", "mysql", "mongo", "redis")):
-            return "Bases de données"
+            return "Données et stockage"
         if any(token in lowered for token in ("ssh", "openssh", "vpn")):
-            return "Accès distant"
-        return "Logiciels divers"
+            return "Sécurité et accès"
+        return "Systèmes et infrastructure"
 
     return [
         CategoryAssignment(
@@ -116,16 +132,24 @@ async def categorize_with_ai(
         }
         for position, item in enumerate(items)
     ]
+    allowed_categories = list(
+        dict.fromkeys([*existing_categories, *BROAD_CATEGORY_TAXONOMY])
+    )
+    target_category_count = max(1, min(6, (len(items) + 3) // 4))
     prompt = (
         "Tu classes des logiciels et services techniques dans un inventaire de cybersécurité. "
-        "Pour chaque élément, choisis exactement une catégorie française concise et réutilisable. "
-        "Réutilise à l’identique une catégorie existante lorsqu’elle convient. "
-        "Si aucune ne convient, "
-        "propose une nouvelle catégorie métier précise; n’utilise jamais une catégorie vague comme "
-        "'Autres'. Apache, Nginx et IIS sont des serveurs web; PHP, Python, "
-        "Node.js et Java sont des langages ou runtimes. Ne modifie pas les positions "
-        "et retourne chaque position une seule fois.\n\n"
+        "Analyse tout le lot avant de répondre et regroupe les éléments dans le plus petit nombre "
+        "possible de familles fonctionnelles larges. Ne crée jamais une catégorie par produit, "
+        "éditeur ou service. Des technologies seulement voisines doivent partager une catégorie. "
+        f"Pour ce lot, vise au maximum {target_category_count} catégories distinctes, "
+        "sauf nécessité "
+        "technique évidente. Pour chaque élément, choisis exactement un libellé dans la liste "
+        "autorisée et réutilise à l’identique une catégorie existante lorsqu’elle est suffisamment "
+        "large. Apache, Nginx et les reverse proxies relèvent de 'Web et API'; React, Axios et les "
+        "frameworks relèvent de 'Frameworks et bibliothèques'. Ne modifie pas les positions et "
+        "retourne chaque position une seule fois.\n\n"
         f"Catégories existantes: {json.dumps(existing_categories, ensure_ascii=False)}\n"
+        f"Catégories autorisées: {json.dumps(allowed_categories, ensure_ascii=False)}\n"
         f"Éléments: {json.dumps(payload_items, ensure_ascii=False)}"
     )
     schema = {
@@ -139,7 +163,8 @@ async def categorize_with_ai(
                         "position": {"type": "integer"},
                         "category_name": {
                             "type": "string",
-                            "description": "Catégorie française concise, existante ou nouvelle.",
+                            "enum": allowed_categories,
+                            "description": "Catégorie fonctionnelle large choisie dans la liste.",
                         },
                         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                         "reason": {"type": "string"},
@@ -193,6 +218,11 @@ async def categorize_with_ai(
     by_position = {assignment.position: assignment for assignment in parsed.assignments}
     if set(by_position) != set(range(len(items))):
         raise CategorizationFailed("La réponse de Gemini est incomplète.")
+    if any(
+        assignment.category_name not in allowed_categories
+        for assignment in parsed.assignments
+    ):
+        raise CategorizationFailed("Gemini a retourné une catégorie non autorisée.")
     return [
         CategoryAssignment(
             key=item.key,

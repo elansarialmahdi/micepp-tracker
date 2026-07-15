@@ -228,12 +228,14 @@ function ScanResults({
         disabled={!items.some((item) => item.selected)}
         onConfirmed={async (suggestions) => {
           const byId = new Map(
-            suggestions.map((item) => [item.key, item.category.name]),
+            suggestions.map((item) => [item.key, item.category?.name ?? null]),
           );
           setItems((current) =>
             current.map((item) => ({
               ...item,
-              category: byId.get(item.detected_service_id) ?? item.category,
+              category: byId.has(item.detected_service_id)
+                ? byId.get(item.detected_service_id) ?? null
+                : item.category,
             })),
           );
           await queryClient.invalidateQueries({ queryKey: ["categories"] });

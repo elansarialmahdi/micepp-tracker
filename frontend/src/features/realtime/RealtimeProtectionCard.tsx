@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Hexagon, Play, X } from "lucide-react";
+import { Play, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "../../api/client";
@@ -8,10 +8,12 @@ import {
   getRealtimeSettings,
   runRealtimeProtection,
   updateRealtimeSettings,
+  type ProtectionJob,
 } from "../../api/realtime";
 import { useAuth } from "../../auth/AuthProvider";
 import { CustomSelect } from "../../components/CustomSelect";
 import { ModalPortal } from "../../components/ModalPortal";
+import { ToggleSwitch } from "../../components/ToggleSwitch";
 
 type IntervalUnit = "minutes" | "hours" | "days";
 const unitSeconds: Record<IntervalUnit, number> = {
@@ -47,6 +49,19 @@ export function countdown(
     .join(" ");
 }
 
+export function isActiveProtectionJob(
+  job: ProtectionJob | null | undefined,
+  now = Date.now(),
+): job is ProtectionJob {
+  if (!job || !["queued", "running"].includes(job.status)) return false;
+  const activity = job.heartbeat_at ?? job.started_at ?? job.created_at;
+  if (!activity) return true;
+  const activityTime = Date.parse(activity);
+  if (Number.isNaN(activityTime)) return false;
+  const staleAfter = job.status === "queued" ? 120_000 : 180_000;
+  return now - activityTime <= staleAfter;
+}
+
 export function RealtimeProtectionCard() {
   const auth = useAuth();
   const queryClient = useQueryClient();
@@ -61,12 +76,14 @@ export function RealtimeProtectionCard() {
   const job = useQuery({
     queryKey: ["realtime-job"],
     queryFn: ({ signal }) => getCurrentProtectionJob(signal),
-    refetchInterval: (query) =>
-      ["queued", "running"].includes(query.state.data?.status ?? "")
-        ? 2000
-        : 10000,
+    refetchOnMount: "always",
+    refetchInterval: (query) => {
+      const status = query.state.data?.status ?? "";
+      if (["queued", "running"].includes(status)) return 400;
+      return settings.data?.enabled ? 1000 : 10000;
+    },
   });
-  const refresh = async () => {
+  const reload = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["realtime-settings"] }),
       queryClient.invalidateQueries({ queryKey: ["realtime-job"] }),
@@ -74,23 +91,37 @@ export function RealtimeProtectionCard() {
   };
   const update = useMutation({
     mutationFn: updateRealtimeSettings,
-    onSuccess: refresh,
+    onSuccess: reload,
   });
   const run = useMutation({
     mutationFn: runRealtimeProtection,
-    onSuccess: refresh,
+    onSuccess: async (newJob) => {
+      queryClient.setQueryData(["realtime-job"], newJob);
+      await reload();
+    },
   });
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    const status = job.data?.status;
+    if (status && !["queued", "running"].includes(status)) {
+      void settings.refetch();
+    }
+  }, [job.data?.id, job.data?.status]);
   const remaining = useMemo(
     () => countdown(settings.data?.next_run_at ?? null, now),
     [settings.data?.next_run_at, now],
   );
+  const scheduledStarting =
+    settings.data?.enabled &&
+    job.isFetchedAfterMount &&
+    remaining === "quelques instants";
   const activeJob =
-    job.data && ["queued", "running"].includes(job.data.status)
+    job.isFetchedAfterMount &&
+    isActiveProtectionJob(job.data, now)
       ? job.data
       : null;
   const progress = activeJob?.total_services
@@ -139,21 +170,17 @@ export function RealtimeProtectionCard() {
       aria-labelledby="realtime-title"
     >
       <div className="realtime-card__title">
-        {auth.hasPermission("settings.update") ? (
-          <label className="realtime-card__toggle">
-            <input
-              type="checkbox"
-              checked={settings.data.enabled}
-              disabled={update.isPending}
-              onChange={(event) =>
-                update.mutate({ enabled: event.target.checked })
-              }
-            />
-            <span className="realtime-card__check" aria-hidden="true">
-              {settings.data.enabled && <Check />}
-            </span>
-          </label>
-        ) : <span className="realtime-card__check" aria-hidden="true">{settings.data.enabled && <Check />}</span>}
+        <ToggleSwitch
+          className="realtime-card__toggle"
+          checked={settings.data.enabled}
+          disabled={
+            update.isPending || !auth.hasPermission("settings.update")
+          }
+          aria-label="Activer la protection en temps réel"
+          onChange={(event) =>
+            update.mutate({ enabled: event.target.checked })
+          }
+        />
         <div>
           <h2 id="realtime-title">
             Protection en temps réel{" "}
@@ -167,8 +194,23 @@ export function RealtimeProtectionCard() {
               <strong>{activeJob.processed_services}/{activeJob.total_services}</strong>
               <progress max="100" value={progress} aria-label={`Vérification à ${progress} %`} />
             </span>
-          ) : settings.data.enabled && remaining === "quelques instants" ? (
-            <p>, vérification des services en cours de démarrage…</p>
+          ) : run.isPending ? (
+            <span
+              className="realtime-inline-progress realtime-inline-progress--pending"
+              aria-live="polite"
+            >
+              <span>Vérification des services :</span>
+              <strong>0/{job.data?.total_services || "…"}</strong>
+              <progress aria-label="Démarrage de la vérification" />
+            </span>
+          ) : scheduledStarting ? (
+            <span
+              className="realtime-inline-progress realtime-inline-progress--pending"
+              aria-live="polite"
+            >
+              <span>Démarrage de la vérification :</span>
+              <progress aria-label="Démarrage de la vérification" />
+            </span>
           ) : settings.data.enabled && remaining ? (
             <p>, vérification de tous les services dans: <strong>{remaining}</strong></p>
           ) : null}
@@ -181,18 +223,28 @@ export function RealtimeProtectionCard() {
             : "L’opération a échoué."}
         </div>
       )}
-      {auth.hasPermission("settings.update") && (
-        <div className="form-actions">
-          {settings.data.enabled && (
+      <div className="form-actions">
+        {auth.hasPermission("settings.update") &&
+          !activeJob &&
+          !scheduledStarting &&
+          !run.isPending && (
+          <button
+            className="realtime-refresh-button"
+            type="button"
+            onClick={() => run.mutate()}
+            aria-label="Actualiser la protection"
+            data-tooltip="Vérifier maintenant"
+          >
+            <RefreshCw aria-hidden="true" />
+          </button>
+          )}
+          {auth.hasPermission("settings.update") && settings.data.enabled && (
             <button type="button" onClick={openConfiguration}>
-              <span className="platform-target-icon realtime-settings-icon" aria-hidden="true">
-                <Hexagon />
-                <span />
-              </span>
+              <img className="settings-icon realtime-settings-icon" src="/assets/settings-icon.svg" alt="" aria-hidden="true" />
               Configurer
             </button>
           )}
-          {!activeJob && (
+          {auth.hasPermission("settings.update") && !activeJob && (
             <button
               className="primary-button"
               type="button"
@@ -204,7 +256,6 @@ export function RealtimeProtectionCard() {
             </button>
           )}
         </div>
-      )}
       {configuring && (
         <ModalPortal>
           <div

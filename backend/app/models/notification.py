@@ -68,6 +68,7 @@ class Notification(Base):
     event_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
     platforms = relationship("Platform", secondary="notification_platforms", lazy="selectin")
+    service = relationship("Service", lazy="selectin")
     user_states = relationship("NotificationUserState", back_populates="notification")
 
 

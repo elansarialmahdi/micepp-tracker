@@ -58,12 +58,26 @@ async def latest_job(db: AsyncSession) -> ProtectionJob | None:
     return await db.scalar(select(ProtectionJob).order_by(ProtectionJob.created_at.desc()).limit(1))
 
 
-async def recover_stale_job(db: AsyncSession, settings: Settings) -> None:
+def stale_job_after_seconds(job: ProtectionJob, settings: Settings) -> int:
+    if job.status == "queued" and job.started_at is None:
+        return max(60, settings.realtime_scheduler_poll_seconds * 2)
+    return max(180, settings.realtime_scheduler_poll_seconds * 3)
+
+
+async def recover_stale_job(
+    db: AsyncSession,
+    settings: Settings,
+    redis: Redis | None = None,
+) -> None:
     job = await active_job(db)
     if job is None:
+        if redis is not None and await redis.get(LOCK_KEY) is not None:
+            await redis.delete(LOCK_KEY)
         return
     activity = aware(job.heartbeat_at or job.started_at or job.created_at)
-    stale_before = datetime.now(UTC) - timedelta(seconds=settings.realtime_lock_ttl_seconds)
+    stale_before = datetime.now(UTC) - timedelta(
+        seconds=stale_job_after_seconds(job, settings)
+    )
     if activity and activity < stale_before:
         job.status = "failed"
         job.completed_at = datetime.now(UTC)
@@ -74,6 +88,9 @@ async def recover_stale_job(db: AsyncSession, settings: Settings) -> None:
             }
         ]
         await db.commit()
+        if redis is not None:
+            # A stopped worker cannot release its lock in the normal finally block.
+            await redis.delete(LOCK_KEY)
 
 
 async def acquire_lock(redis: Redis, settings: Settings) -> str | None:
@@ -181,36 +198,60 @@ async def execute_protection_job(
             await refresh_lock(redis, token, settings)
             batch_number += 1
             job.current_batch = batch_number
-            results = await asyncio.gather(
-                *(check_with_retry(service_id) for service_id in service_ids)
-            )
-            for service_id, (successful, new_notifications, error_message) in zip(
-                service_ids, results, strict=True
-            ):
-                if successful:
-                    succeeded += 1
-                    notifications += new_notifications
-                else:
-                    failed += 1
-                    if len(errors) < 50:
-                        errors.append(
-                            {
-                                "service_id": str(service_id),
-                                "code": "SERVICE_CHECK_FAILED",
-                                "message": error_message,
-                            }
-                        )
-                processed += 1
-                job = await db.get(ProtectionJob, job_id)
-                assert job is not None
-                job.processed_services = processed
-                job.succeeded_services = succeeded
-                job.failed_services = failed
-                job.new_notifications = notifications
-                job.error_summary = errors
-                job.current_batch = batch_number
-                job.heartbeat_at = datetime.now(UTC)
-                await db.commit()
+            async def checked_service(service_id: Any) -> tuple[Any, bool, int, str | None]:
+                successful, new_notifications, error_message = await check_with_retry(
+                    service_id
+                )
+                return service_id, successful, new_notifications, error_message
+
+            pending = {
+                asyncio.create_task(checked_service(service_id))
+                for service_id in service_ids
+            }
+            while pending:
+                done, pending = await asyncio.wait(
+                    pending,
+                    timeout=15,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:
+                    job = await db.get(ProtectionJob, job_id)
+                    assert job is not None
+                    job.heartbeat_at = datetime.now(UTC)
+                    await db.commit()
+                    await refresh_lock(redis, token, settings)
+                    continue
+                for completed in done:
+                    (
+                        service_id,
+                        successful,
+                        new_notifications,
+                        error_message,
+                    ) = await completed
+                    if successful:
+                        succeeded += 1
+                        notifications += new_notifications
+                    else:
+                        failed += 1
+                        if len(errors) < 50:
+                            errors.append(
+                                {
+                                    "service_id": str(service_id),
+                                    "code": "SERVICE_CHECK_FAILED",
+                                    "message": error_message,
+                                }
+                            )
+                    processed += 1
+                    job = await db.get(ProtectionJob, job_id)
+                    assert job is not None
+                    job.processed_services = processed
+                    job.succeeded_services = succeeded
+                    job.failed_services = failed
+                    job.new_notifications = notifications
+                    job.error_summary = errors
+                    job.current_batch = batch_number
+                    job.heartbeat_at = datetime.now(UTC)
+                    await db.commit()
             last_id = batch_last_id
 
         job.completed_at = datetime.now(UTC)
@@ -259,29 +300,37 @@ async def execute_protection_job(
         await release_lock(redis, token)
 
 
-async def create_due_job(db: AsyncSession, settings: Settings) -> ProtectionJob | None:
+async def create_due_job(
+    db: AsyncSession,
+    settings: Settings,
+    redis: Redis | None = None,
+) -> ProtectionJob | None:
     protection = await get_or_create_settings(db, settings)
     now = datetime.now(UTC)
     if not protection.enabled or (
         aware(protection.next_run_at) and aware(protection.next_run_at) > now
     ):
         return None
+    await recover_stale_job(db, settings, redis)
     active = await active_job(db)
     if active:
-        stale_before = now - timedelta(seconds=settings.realtime_lock_ttl_seconds)
-        activity = aware(active.heartbeat_at or active.created_at)
-        if activity and activity < stale_before:
-            active.status = "queued"
-            active.retry_count += 1
-            await db.commit()
-            return active
         return None
     slot = int(now.timestamp() // protection.interval_seconds)
     key = f"scheduled:{slot}"
     existing = await db.scalar(select(ProtectionJob).where(ProtectionJob.idempotency_key == key))
     if existing:
         return None
-    job = ProtectionJob(trigger="scheduled", status="queued", idempotency_key=key, error_summary=[])
+    total_services = int(
+        await db.scalar(select(func.count(Service.id)).where(Service.archived_at.is_(None)))
+        or 0
+    )
+    job = ProtectionJob(
+        trigger="scheduled",
+        status="queued",
+        total_services=total_services,
+        idempotency_key=key,
+        error_summary=[],
+    )
     db.add(job)
     protection.next_run_at = now + timedelta(seconds=protection.interval_seconds)
     await db.commit()

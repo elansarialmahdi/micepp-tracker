@@ -85,6 +85,11 @@ def test_notification_read_and_hide_preserve_source_row(
         ).json()["total"]
         == 0
     )
+    archived = phase_five_context.client.get(
+        "/v1/notifications?hidden=true", headers=phase_five_context.headers
+    )
+    assert archived.status_code == 200
+    assert archived.json()["total"] == 1
 
     async def source_count() -> int:
         engine = create_async_engine(phase_five_context.settings.database_url)

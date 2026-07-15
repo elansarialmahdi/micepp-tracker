@@ -19,7 +19,7 @@ def test_gemini_categorization_uses_structured_output(monkeypatch) -> None:  # t
                 "assignments": [
                     {
                         "position": 0,
-                        "category_name": "Serveurs web",
+                        "category_name": "Web et API",
                         "confidence": 0.98,
                         "reason": "Apache fournit un serveur HTTP.",
                     }
@@ -53,7 +53,7 @@ def test_gemini_categorization_uses_structured_output(monkeypatch) -> None:  # t
         )
     )
 
-    assert result[0].category_name == "Serveurs web"
+    assert result[0].category_name == "Web et API"
     assert result[0].key == "apache"
     assert captured["url"].endswith("/models/gemini-2.5-flash:generateContent")
     assert captured["headers"] == {"x-goog-api-key": "test-key"}
@@ -61,3 +61,31 @@ def test_gemini_categorization_uses_structured_output(monkeypatch) -> None:  # t
     response_schema = captured["body"]["generationConfig"]["responseSchema"]
     assert "additionalProperties" not in response_schema
     assert "additionalProperties" not in response_schema["properties"]["assignments"]["items"]
+    allowed = response_schema["properties"]["assignments"]["items"]["properties"][
+        "category_name"
+    ]["enum"]
+    assert "Bases de données" in allowed
+    assert "Frameworks et bibliothèques" in allowed
+    prompt = captured["body"]["contents"][0]["parts"][0]["text"]
+    assert "plus petit nombre possible" in prompt
+    assert "catégorie par produit" in prompt
+
+
+def test_mock_categorization_groups_related_libraries() -> None:
+    settings = Settings(app_env="test", ai_provider="mock")
+    result = asyncio.run(
+        categorize_with_ai(
+            [
+                ServiceToCategorize(key="react", name="React"),
+                ServiceToCategorize(key="axios", name="Axios"),
+                ServiceToCategorize(key="postgres", name="PostgreSQL"),
+            ],
+            [],
+            settings,
+        )
+    )
+
+    by_key = {item.key: item.category_name for item in result}
+    assert by_key["react"] == "Frameworks et bibliothèques"
+    assert by_key["axios"] == "Frameworks et bibliothèques"
+    assert by_key["postgres"] == "Données et stockage"

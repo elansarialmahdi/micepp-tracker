@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router/dom";
 
 import { queryClient } from "./app/queryClient";
 import { AuthProvider } from "./auth/AuthProvider";
+import { ViewportTooltip } from "./components/ViewportTooltip";
 import { router } from "./routes/router";
 import "./styles/global.css";
 import "./styles/micepp-theme.css";
@@ -23,6 +24,7 @@ createRoot(rootElement).render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <RouterProvider router={router} />
+        <ViewportTooltip />
       </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,

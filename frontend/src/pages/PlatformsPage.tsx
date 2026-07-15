@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Filter, Search } from "lucide-react";
+import { ChevronDown, Filter } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client";
+import { ViewportMenuPortal } from "../components/ViewportMenuPortal";
 import { getPlatforms } from "../api/platforms";
 import { PlatformSummaryCard } from "../features/platforms/PlatformSummaryCard";
-import { useOutsideClick } from "../hooks/useOutsideClick";
 
 type PlatformFilter = "all" | "threats" | "safe" | "recent";
 
@@ -14,7 +14,6 @@ export function PlatformsPage() {
   const [filter, setFilter] = useState<PlatformFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
-  useOutsideClick(filterRef, filtersOpen, () => setFiltersOpen(false));
   const platforms = useQuery({
     queryKey: ["platforms", "catalog"],
     queryFn: ({ signal }) =>
@@ -66,7 +65,11 @@ export function PlatformsPage() {
               <ChevronDown aria-hidden="true" />
             </button>
             {filtersOpen && (
-              <div className="custom-dropdown__menu" role="menu">
+              <ViewportMenuPortal
+                anchorRef={filterRef}
+                className="custom-dropdown__menu"
+                onRequestClose={() => setFiltersOpen(false)}
+              >
                 {(
                   [
                     ["all", "Toutes les plateformes"],
@@ -88,10 +91,9 @@ export function PlatformsPage() {
                     {label}
                   </button>
                 ))}
-              </div>
+              </ViewportMenuPortal>
             )}
           </div>
-          <Search aria-hidden="true" />
           </div>
         </div>
       </div>

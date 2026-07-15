@@ -123,7 +123,7 @@ test("détecte automatiquement la cible puis permet de corriger et confirmer les
     screen.getByRole("button", { name: "Catégorisation par IA" }),
   );
   await waitFor(() => expect(mocks.previewServiceCategorization).toHaveBeenCalledOnce());
-  fireEvent.click(screen.getByRole("button", { name: "Confirmer les catégories" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirmer la sélection" }));
   await waitFor(() => expect(mocks.confirmServiceCategorization).toHaveBeenCalledOnce());
   expect(screen.getByLabelText("Catégorie Nginx")).toHaveValue("Serveurs web");
   fireEvent.change(screen.getByLabelText("Nom Nginx"), {

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, EyeOff } from "lucide-react";
+import { useState } from "react";
 
 import { ApiError } from "../api/client";
 import {
@@ -7,8 +8,13 @@ import {
   hideAllNotifications,
   hideNotification,
   readNotification,
+  type NotificationItem,
 } from "../api/notifications";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  notificationServiceLabel,
+  ThreatNotificationModal,
+} from "../components/ThreatNotificationModal";
 
 const severityLabels = {
   critical: "Critique",
@@ -21,6 +27,7 @@ const severityLabels = {
 export function NotificationsPage() {
   const auth = useAuth();
   const queryClient = useQueryClient();
+  const [selectedNotification, setSelectedNotification] = useState<NotificationItem | null>(null);
   const notifications = useQuery({
     queryKey: ["notifications"],
     queryFn: ({ signal }) => getNotifications(signal),
@@ -60,12 +67,17 @@ export function NotificationsPage() {
             className={`notification-item notification-item--${item.severity}${item.is_read ? " notification-item--read" : ""}`}
             key={item.id}
           >
-            <div>
+            <button
+              className="notification-item__open"
+              type="button"
+              onClick={() => setSelectedNotification(item)}
+              aria-label={`Voir les détails de la menace ${notificationServiceLabel(item)}`}
+            >
               <span className="severity-label">{severityLabels[item.severity]}</span>
-              <h2>{item.title}</h2>
+              <h2>Menace {notificationServiceLabel(item)}</h2>
               <p>{item.message}</p>
               <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString("fr-FR")}</time>
-            </div>
+            </button>
             <div className="notification-actions">
               {!item.is_read && (
                 <button type="button" onClick={() => read.mutate(item.id)} disabled={read.isPending}>
@@ -81,6 +93,12 @@ export function NotificationsPage() {
           </article>
         ))}
       </div>
+      {selectedNotification && (
+        <ThreatNotificationModal
+          notification={selectedNotification}
+          onClose={() => setSelectedNotification(null)}
+        />
+      )}
     </section>
   );
 }

@@ -1,4 +1,3 @@
-import { Hexagon } from "lucide-react";
 import { Link } from "react-router";
 
 import type { Platform } from "../../api/platforms";
@@ -26,10 +25,7 @@ export function PlatformSummaryCard({ platform, compact = false }: { platform: P
           data-tooltip="Voir la plateforme"
           data-tooltip-placement="left"
         >
-          <span className="platform-target-icon" aria-hidden="true">
-            <Hexagon />
-            <span />
-          </span>
+          <img className="settings-icon" src="/assets/settings-icon.svg" alt="" aria-hidden="true" />
         </Link>
       </div>
     </article>

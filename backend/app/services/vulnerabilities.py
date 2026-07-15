@@ -345,7 +345,7 @@ async def _check_osv(
             create_notification(
                 db,
                 type="vulnerability.detected",
-                title=f"{identifier} détectée",
+                title=f"Menace sur {service.name}",
                 message=(
                     f"{service.name} {service.version} est affecté selon OSV "
                     f"({identity.ecosystem}:{identity.name})."
@@ -609,8 +609,10 @@ async def check_service(db: AsyncSession, service: Service, settings: Settings) 
             create_notification(
                 db,
                 type="vulnerability.detected",
-                title=f"{cve_id} détectée",
-                message=f"{service.name} est potentiellement affecté : {reason}",
+                title=f"Menace sur {service.name}",
+                message=(
+                    f"{service.name} {service.version} est potentiellement affecté : {reason}"
+                ),
                 severity=vulnerability.severity
                 if vulnerability.severity in {"critical", "high", "medium", "low"}
                 else "info",

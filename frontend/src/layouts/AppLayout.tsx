@@ -2,10 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   History,
   LayoutDashboard,
+  Moon,
   Power,
-  Plus,
   Server,
-  UserRound,
+  Sun,
   Users,
   X,
 } from "lucide-react";
@@ -39,7 +39,7 @@ const navigation = [
   },
   {
     to: "/users",
-    label: "Utilisateurs et permissions",
+    label: "Utilisateurs & permissions",
     permission: "user.read",
     icon: Users,
   },
@@ -73,7 +73,7 @@ function CreatePlatformControl() {
           aria-label="Ajouter une plateforme"
           data-tooltip="Ajouter une plateforme"
         >
-          <Plus aria-hidden="true" />
+          <img src="/assets/add-circle.svg" alt="" aria-hidden="true" />
         </button>
       </div>
       {creating && (
@@ -135,15 +135,35 @@ function CreatePlatformControl() {
 
 export function AppLayout() {
   const auth = useAuth();
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    document.documentElement.dataset.theme === "light" ? "light" : "dark",
+  );
   const role =
     auth.user?.roles?.join(", ") ||
     (auth.hasPermission("user.manage") ? "Administrateur" : "Utilisateur");
+
+  function toggleTheme() {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("micepp-theme", nextTheme);
+    setTheme(nextTheme);
+  }
 
   return (
     <div className="dashboard-layout">
       <aside className="sidebar">
         <div className="sidebar__brand">
           <span>MICEPP - TRACKER</span>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Passer au thème clair" : "Passer au thème sombre"}
+            data-tooltip={theme === "dark" ? "Mode clair" : "Mode sombre"}
+            data-tooltip-placement="bottom"
+          >
+            {theme === "dark" ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
+          </button>
         </div>
         {auth.hasPermission("platform.create") && <CreatePlatformControl />}
         <nav className="sidebar__navigation" aria-label="Navigation principale">
@@ -165,9 +185,12 @@ export function AppLayout() {
         </nav>
         <img className="sidebar__watermark" src="/assets/micepp-logo.png" alt="" aria-hidden="true" />
         <div className="sidebar__account">
-          <span className="profile-avatar" aria-hidden="true">
-            <UserRound />
-          </span>
+          <img
+            className="profile-avatar"
+            src={theme === "light" ? "/assets/profile-light.svg" : "/assets/profile.svg"}
+            alt=""
+            aria-hidden="true"
+          />
           <span className="sidebar__identity">
             <strong>{auth.user?.username}</strong>
             <small>{role}</small>

@@ -72,6 +72,16 @@ def test_nvd_check_selects_cpe_creates_history_and_deduplicates_notifications(
     assert first.json()["active_vulnerabilities"] == 1
     assert first.json()["new_notifications"] == 1
 
+    notifications = vulnerability_context.client.get(
+        "/v1/notifications", headers=vulnerability_context.headers
+    )
+    assert notifications.status_code == 200
+    notification = notifications.json()["items"][0]
+    assert notification["service_name"] == "NGINX"
+    assert notification["service_version"] == "1.20.0"
+    assert notification["threat_identifier"] == "CVE-2021-23017"
+    assert notification["platforms"][0]["name"] == "NVD"
+
     candidates = vulnerability_context.client.get(
         f"/v1/services/{vulnerability_context.service_id}/cpe-candidates",
         headers=vulnerability_context.headers,

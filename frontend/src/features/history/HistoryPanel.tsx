@@ -56,32 +56,39 @@ export function HistoryPanel({ platformId }: { platformId: string }) {
             auth.hasPermission("history.hide") &&
             Boolean(history.data?.items.length) && (
               <button
+                className="history-clear-button panel-icon-button"
                 type="button"
                 onClick={() => hide.mutate()}
                 disabled={hide.isPending}
+                aria-label="Vider l’historique"
+                data-tooltip="Vider l’historique"
+                data-tooltip-placement="bottom"
               >
                 <EyeOff aria-hidden="true" />
-                Vider l’historique
               </button>
             )}
           {showTrash ? (
-            <button type="button" onClick={() => setShowTrash(false)}>
+            <button
+              className="archive-toggle-button panel-icon-button"
+              type="button"
+              onClick={() => setShowTrash(false)}
+              aria-label="Retour"
+              data-tooltip="Retour à l’historique"
+              data-tooltip-placement="bottom"
+            >
               <ArrowLeft aria-hidden="true" />
-              Retour
             </button>
           ) : (
-            <span className="tooltip-control">
-              <button
-                type="button"
-                aria-label="Voir l’ancien historique"
-                onClick={() => setShowTrash(true)}
-              >
-                <Trash2 aria-hidden="true" />
-              </button>
-              <span className="tooltip-control__content" role="tooltip">
-                Ancien historique
-              </span>
-            </span>
+            <button
+              className="archive-toggle-button panel-icon-button"
+              type="button"
+              aria-label="Voir l’ancien historique"
+              data-tooltip="Ancien historique"
+              data-tooltip-placement="bottom"
+              onClick={() => setShowTrash(true)}
+            >
+              <Trash2 aria-hidden="true" />
+            </button>
           )}
         </div>
       </div>

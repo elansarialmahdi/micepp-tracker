@@ -12,9 +12,11 @@ from app.core.security import create_access_token
 from app.models.auth import User
 from app.models.realtime import ProtectionJob, RealtimeProtectionSetting
 from app.services.realtime import (
+    LOCK_KEY,
     acquire_lock,
     create_due_job,
     execute_protection_job,
+    recover_stale_job,
     release_lock,
 )
 from tests.conftest import AuthTestContext, FakeRedis
@@ -126,6 +128,7 @@ def test_scheduler_is_idempotent_and_advances_next_run(
 
     first, second, jobs = asyncio.run(schedule())
     assert first is not None
+    assert first.total_services == 2
     assert second is None
     assert jobs == 1
 
@@ -147,6 +150,53 @@ def test_distributed_lock_rejects_a_second_owner(
     assert first is not None
     assert second is None
     assert third is not None
+
+
+def test_stale_queued_job_is_failed_quickly(
+    realtime_context: RealtimeTestContext,
+) -> None:
+    async def recover() -> tuple[str, list, str | None]:
+        settings = realtime_context.settings
+        redis = FakeRedis()
+        await redis.set(LOCK_KEY, "orphaned-worker", ex=3600, nx=True)
+        engine = create_async_engine(settings.database_url)  # type: ignore[attr-defined]
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as db:
+            job = ProtectionJob(
+                trigger="scheduled",
+                status="queued",
+                created_at=datetime.now(UTC) - timedelta(minutes=5),
+                error_summary=[],
+            )
+            db.add(job)
+            await db.commit()
+            await recover_stale_job(db, settings, redis)  # type: ignore[arg-type]
+            await db.refresh(job)
+            result = job.status, job.error_summary, await redis.get(LOCK_KEY)
+        await engine.dispose()
+        return result
+
+    status, errors, lock = asyncio.run(recover())
+    assert status == "failed"
+    assert errors[0]["code"] == "PROTECTION_WORKER_INTERRUPTED"
+    assert lock is None
+
+
+def test_orphaned_lock_without_active_job_is_removed(
+    realtime_context: RealtimeTestContext,
+) -> None:
+    async def recover() -> str | None:
+        settings = realtime_context.settings
+        redis = FakeRedis()
+        await redis.set(LOCK_KEY, "orphaned-worker", ex=3600, nx=True)
+        engine = create_async_engine(settings.database_url)  # type: ignore[attr-defined]
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as db:
+            await recover_stale_job(db, settings, redis)  # type: ignore[arg-type]
+        await engine.dispose()
+        return await redis.get(LOCK_KEY)
+
+    assert asyncio.run(recover()) is None
 
 
 def test_pipeline_keeps_partial_progress_when_one_service_fails(

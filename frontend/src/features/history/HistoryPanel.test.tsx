@@ -45,10 +45,11 @@ test("affiche et masque l’historique visible", async () => {
     expect(mocks.hidePlatformHistory).toHaveBeenCalledWith("platform-1"),
   );
 
-  expect(screen.getByRole("tooltip")).toHaveTextContent("Ancien historique");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Voir l’ancien historique" }),
-  );
+  const archiveButton = screen.getByRole("button", {
+    name: "Voir l’ancien historique",
+  });
+  expect(archiveButton).toHaveAttribute("data-tooltip", "Ancien historique");
+  fireEvent.click(archiveButton);
   expect(
     await screen.findByRole("button", { name: "Retour" }),
   ).toBeInTheDocument();

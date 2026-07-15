@@ -244,7 +244,7 @@ export function AddServicesPage({
             suggestions.forEach((suggestion) => {
               setValue(
                 `items.${Number(suggestion.key)}.category_id`,
-                suggestion.category.id,
+                suggestion.category?.id ?? "",
                 { shouldDirty: true },
               );
             });

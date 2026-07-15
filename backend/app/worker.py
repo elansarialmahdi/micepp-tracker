@@ -120,12 +120,14 @@ async def _scheduler_tick() -> None:
 
     engine = create_database_engine(settings)
     factory = create_session_factory(engine)
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         async with factory() as db:
-            job = await create_due_job(db, settings)
+            job = await create_due_job(db, settings, redis)
             if job is not None:
                 execute_protection_task.delay(str(job.id))
     finally:
+        await redis.aclose()
         await engine.dispose()
 
 

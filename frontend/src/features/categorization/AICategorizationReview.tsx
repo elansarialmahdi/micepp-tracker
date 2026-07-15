@@ -14,6 +14,17 @@ import { ModalPortal } from "../../components/ModalPortal";
 
 type ReviewRow = AICategorizationPreviewSuggestion & { selected: boolean };
 
+type ReviewCategory = {
+  key: string;
+  categoryName: string;
+  selected: boolean;
+  indexes: number[];
+};
+
+function normalizedCategoryName(value: string): string {
+  return value.trim().toLocaleLowerCase("fr-FR");
+}
+
 export function AICategorizationReview({
   platformId,
   items,
@@ -23,13 +34,29 @@ export function AICategorizationReview({
   platformId: string;
   items: AICategorizationInput[];
   disabled?: boolean;
-  onConfirmed: (items: { key: string; category: Category }[]) => void | Promise<void>;
+  onConfirmed: (items: { key: string; category: Category | null }[]) => void | Promise<void>;
 }) {
   const [rows, setRows] = useState<ReviewRow[] | null>(null);
-  const names = useMemo(
-    () => new Map(items.map((item) => [item.key, item.name])),
-    [items],
-  );
+  const categories = useMemo(() => {
+    if (!rows) return [];
+    const grouped = new Map<string, ReviewCategory>();
+    rows.forEach((row, index) => {
+      const key = normalizedCategoryName(row.category_name);
+      const current = grouped.get(key);
+      if (current) {
+        current.indexes.push(index);
+        current.selected = current.selected || row.selected;
+        return;
+      }
+      grouped.set(key, {
+        key,
+        categoryName: row.category_name,
+        selected: row.selected,
+        indexes: [index],
+      });
+    });
+    return [...grouped.values()];
+  }, [rows]);
   const preview = useMutation({
     mutationFn: () => previewServiceCategorization(platformId, items),
     onSuccess: (data) =>
@@ -45,8 +72,14 @@ export function AICategorizationReview({
           selected: row.selected,
         })),
       ),
-    onSuccess: async (data) => {
-      await onConfirmed(data.items);
+    onSuccess: async (data, reviewRows) => {
+      const confirmedByKey = new Map(data.items.map((item) => [item.key, item.category]));
+      await onConfirmed(
+        reviewRows.map((row) => ({
+          key: row.key,
+          category: row.selected ? confirmedByKey.get(row.key) ?? null : null,
+        })),
+      );
       setRows(null);
     },
   });
@@ -88,7 +121,7 @@ export function AICategorizationReview({
             <div className="section-header">
               <div>
                 <h2 id="ai-review-title">Confirmer les catégories</h2>
-                <p>Décochez ou modifiez les suggestions avant leur création.</p>
+                <p>Décochez ou renommez les catégories proposées avant la confirmation finale.</p>
               </div>
               <button
                 className="modal-close"
@@ -102,32 +135,32 @@ export function AICategorizationReview({
               </button>
             </div>
             <div className="ai-review-list">
-              {rows.map((row, index) => (
-                <div className="ai-review-row" key={row.key}>
+              {categories.map((category) => (
+                <div className="ai-review-row" key={category.key}>
                   <label className="ai-review-check">
                     <input
                       type="checkbox"
-                      checked={row.selected}
+                      checked={category.selected}
                       onChange={(event) =>
                         setRows((current) =>
                           current?.map((item, itemIndex) =>
-                            itemIndex === index
+                            category.indexes.includes(itemIndex)
                               ? { ...item, selected: event.target.checked }
                               : item,
                           ) ?? null,
                         )
                       }
+                      aria-label={`Conserver la catégorie ${category.categoryName}`}
                     />
-                    <span>{names.get(row.key) ?? `Service ${index + 1}`}</span>
                   </label>
                   <input
-                    aria-label={`Catégorie pour ${names.get(row.key) ?? `service ${index + 1}`}`}
-                    value={row.category_name}
-                    disabled={!row.selected}
+                    aria-label={`Nom de la catégorie ${category.categoryName}`}
+                    value={category.categoryName}
+                    disabled={!category.selected}
                     onChange={(event) =>
                       setRows((current) =>
                         current?.map((item, itemIndex) =>
-                          itemIndex === index
+                          category.indexes.includes(itemIndex)
                             ? { ...item, category_name: event.target.value }
                             : item,
                         ) ?? null,
@@ -148,7 +181,7 @@ export function AICategorizationReview({
                 }
                 onClick={() => confirmation.mutate(rows)}
               >
-                {confirmation.isPending ? "Confirmation…" : "Confirmer les catégories"}
+                {confirmation.isPending ? "Confirmation…" : "Confirmer la sélection"}
               </button>
             </div>
             </section>

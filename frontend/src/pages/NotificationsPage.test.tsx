@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, expect, test, vi } from "vitest";
 
 import { NotificationsPage } from "./NotificationsPage";
@@ -26,8 +27,12 @@ beforeEach(() => {
         message: "Une correction est requise.",
         severity: "critical",
         vulnerability_id: null,
-        service_id: null,
-        platform_ids: [],
+        service_id: "service-1",
+        service_name: "React",
+        service_version: "18.2.0",
+        threat_identifier: "CVE-2024-0001",
+        platform_ids: ["platform-1"],
+        platforms: [{ id: "platform-1", name: "Portail client" }],
         created_at: "2026-07-13T12:00:00Z",
         read_at: null,
         is_read: false,
@@ -47,12 +52,19 @@ test("affiche la gravité textuellement et permet de masquer une notification", 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <NotificationsPage />
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 
-  expect(await screen.findByText("Vulnérabilité critique")).toBeInTheDocument();
+  expect(await screen.findByText("Menace React 18.2.0")).toBeInTheDocument();
   expect(screen.getByText("Critique")).toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Voir les détails de la menace React 18.2.0" }),
+  );
+  expect(await screen.findByRole("dialog", { name: "Menace React 18.2.0" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
   fireEvent.click(screen.getByRole("button", { name: "Masquer" }));
   await waitFor(() => expect(mocks.hideNotification.mock.calls[0]?.[0]).toBe("notification-1"));
 });

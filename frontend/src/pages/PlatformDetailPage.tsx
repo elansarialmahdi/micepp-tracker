@@ -118,25 +118,12 @@ export function PlatformDetailPage() {
           <div className="platform-header-actions">
             {auth.hasPermission("service.create") && (
               <button
-                className="primary-button"
+                className="add-services-button"
                 type="button"
                 onClick={() => setAddingServices(true)}
               >
                 <Plus aria-hidden="true" />
                 Ajouter des services
-              </button>
-            )}
-            {auth.hasPermission("service.create") && (
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => setCategoriesOpen((current) => !current)}
-                aria-pressed={categoriesOpen}
-                aria-expanded={categoriesOpen}
-                aria-haspopup="dialog"
-              >
-                <FolderPlus aria-hidden="true" />
-                Catégories
               </button>
             )}
             <div className="action-menu">
@@ -151,6 +138,18 @@ export function PlatformDetailPage() {
               </button>
               {menuOpen && (
                 <div className="action-menu__content">
+                  {auth.hasPermission("service.create") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCategoriesOpen((current) => !current);
+                        setMenuOpen(false);
+                      }}
+                    >
+                      <FolderPlus aria-hidden="true" />
+                      Catégories
+                    </button>
+                  )}
                   {auth.hasPermission("platform.update") && (
                     <button
                       type="button"

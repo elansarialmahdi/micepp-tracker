@@ -298,7 +298,7 @@ export function ImportServicesPage({
               setCategoryOverrides((current) => ({
                 ...current,
                 ...Object.fromEntries(
-                  suggestions.map((item) => [Number(item.key), item.category.name]),
+                  suggestions.map((item) => [Number(item.key), item.category?.name ?? ""]),
                 ),
               }));
               await queryClient.invalidateQueries({ queryKey: ["categories"] });

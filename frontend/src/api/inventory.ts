@@ -255,7 +255,7 @@ export type VulnerabilityDetail = ServiceVulnerability & {
   source: string;
   metrics: Record<string, unknown>;
   weaknesses: unknown[];
-  references: { url?: string; source?: string }[];
+  references: unknown[];
   affected_configuration: Record<string, unknown> | null;
   last_sync_at: string;
 };

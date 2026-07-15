@@ -22,6 +22,7 @@ from app.schemas.notification import (
     AuditEventListResponse,
     AuditEventResponse,
     NotificationListResponse,
+    NotificationPlatformResponse,
     NotificationResponse,
 )
 from app.services.audit import record_audit, request_audit_context
@@ -54,6 +55,8 @@ async def required_notification(db: AsyncSession, notification_id: UUID) -> Noti
 def notification_response(
     notification: Notification, state: NotificationUserState | None
 ) -> NotificationResponse:
+    metadata = notification.event_metadata or {}
+    threat_identifier = metadata.get("identifier") or metadata.get("cve_id")
     return NotificationResponse(
         id=notification.id,
         type=notification.type,
@@ -62,11 +65,18 @@ def notification_response(
         severity=notification.severity,
         vulnerability_id=notification.vulnerability_id,
         service_id=notification.service_id,
+        service_name=notification.service.name if notification.service else None,
+        service_version=notification.service.version if notification.service else None,
+        threat_identifier=str(threat_identifier) if threat_identifier else None,
         platform_ids=[platform.id for platform in notification.platforms],
+        platforms=[
+            NotificationPlatformResponse(id=platform.id, name=platform.name)
+            for platform in notification.platforms
+        ],
         created_at=notification.created_at,
         read_at=state.read_at if state else None,
         is_read=bool(state and state.read_at),
-        metadata=notification.event_metadata,
+        metadata=metadata,
     )
 
 
@@ -76,6 +86,7 @@ async def notifications_index(
     user: NotificationReader,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
+    hidden: bool = False,
 ) -> NotificationListResponse:
     visible = (
         select(Notification, NotificationUserState)
@@ -84,12 +95,19 @@ async def notifications_index(
             (NotificationUserState.notification_id == Notification.id)
             & (NotificationUserState.user_id == user.id),
         )
-        .where(NotificationUserState.hidden_at.is_(None))
+        .where(
+            NotificationUserState.hidden_at.is_not(None)
+            if hidden
+            else NotificationUserState.hidden_at.is_(None)
+        )
     )
     total = await db.scalar(select(func.count()).select_from(visible.subquery())) or 0
     rows = (
         await db.execute(
-            visible.options(selectinload(Notification.platforms))
+            visible.options(
+                selectinload(Notification.platforms),
+                selectinload(Notification.service),
+            )
             .order_by(Notification.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -121,7 +139,7 @@ async def notifications_read(
     state = await notification_state(db, notification_id, user.id)
     state.read_at = state.read_at or datetime.now(UTC)
     await db.commit()
-    await db.refresh(notification, attribute_names=["platforms"])
+    await db.refresh(notification, attribute_names=["platforms", "service"])
     return notification_response(notification, state)
 
 
