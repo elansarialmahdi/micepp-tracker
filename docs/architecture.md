@@ -8,7 +8,7 @@ le frontend à la racine et transmet `/api/*` à FastAPI. PostgreSQL et Redis so
 Docker interne et ne publient aucun port sur l’hôte.
 
 ```text
-Navigateur :8080/:8443
+Navigateur :8081/:8443
        |
 WAF ModSecurity + OWASP CRS
        |

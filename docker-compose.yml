@@ -68,7 +68,7 @@ services:
       APP_SECRET_KEY: ${APP_SECRET_KEY:-development-only-change-me}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-micepp}:${POSTGRES_PASSWORD:-micepp-development}@postgres:5432/${POSTGRES_DB:-micepp}
       REDIS_URL: redis://redis:6379/0
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8081,http://localhost:5173}
       EXPECTED_DATABASE_REVISION: ${EXPECTED_DATABASE_REVISION:-20260715_0011}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
@@ -242,7 +242,7 @@ services:
     environment:
       BACKEND: http://reverse-proxy:80
       SERVER_NAME: ${SERVER_NAME:-localhost}
-      PORT: 8080
+      PORT: 8081
       SSL_PORT: 8443
       SSL_PROTOCOLS: "TLSv1.2 TLSv1.3"
       NGINX_ALWAYS_TLS_REDIRECT: "off"
@@ -271,11 +271,11 @@ services:
       ACCESSLOG: /dev/stdout
       ERRORLOG: /dev/stderr
       LOGLEVEL: warn
-      CORS_HEADER_403_ALLOW_ORIGIN: ${WAF_CORS_ALLOW_ORIGIN:-http://localhost:8080}
+      CORS_HEADER_403_ALLOW_ORIGIN: ${WAF_CORS_ALLOW_ORIGIN:-http://localhost:8081}
     volumes:
       - ./infra/waf/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:ro
     ports:
-      - "${HTTP_PORT:-8080}:8080"
+      - "${HTTP_PORT:-8081}:8081"
       - "${HTTPS_PORT:-8443}:8443"
     depends_on:
       reverse-proxy:

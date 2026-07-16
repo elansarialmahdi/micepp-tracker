@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://micepp:micepp@localhost:5432/micepp"
     redis_url: str = "redis://localhost:6379/0"
     allowed_origins: Annotated[list[str], NoDecode] = [
-        "http://localhost:8080",
+        "http://localhost:8081",
         "http://localhost:5173",
     ]
     expected_database_revision: str = "20260715_0011"

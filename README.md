@@ -20,7 +20,7 @@ et le durcissement de production.
    docker compose up --build
    ```
 
-4. Ouvrir <http://localhost:8080>.
+4. Ouvrir <http://localhost:8081>.
 
 Au premier démarrage, l’API attend PostgreSQL et Redis, applique `alembic upgrade head`, initialise
 les permissions et l’administrateur, puis démarre.
@@ -35,6 +35,163 @@ Les données PostgreSQL et Redis sont conservées dans des volumes Docker nommé
 
 La liveness indique que le processus API répond. La readiness retourne `503` tant que PostgreSQL,
 Redis ou la migration attendue ne sont pas prêts.
+
+## Guide complet du tracker
+
+### Rôle de l'application
+
+MICEPP-Tracker sert à suivre la sécurité d'un parc de plateformes. L'application permet de créer des
+plateformes, d'y inventorier des services, d'importer des services depuis Excel, de lancer des scans
+contrôlés, de vérifier les vulnérabilités connues et de notifier les utilisateurs lorsqu'une menace
+est détectée. Elle conserve aussi un historique d'audit des opérations importantes.
+
+### Architecture d'exécution
+
+Le navigateur ne parle pas directement à l'API. Le trafic passe d'abord par le WAF OWASP CRS, puis
+par le reverse proxy Nginx. Nginx sert le frontend React sur `/` et transmet les appels `/api/*` à
+FastAPI.
+
+```text
+Navigateur :8081/:8443
+       |
+WAF ModSecurity + OWASP CRS
+       |
+Reverse proxy Nginx interne
+       |-- /       -> React/Vite
+       `-- /api/*  -> FastAPI
+                         |-- PostgreSQL
+                         `-- Redis
+```
+
+Les workers Celery utilisent la même base PostgreSQL et Redis pour traiter les scans et la protection
+périodique en arrière-plan. Les données persistantes restent dans les volumes Docker
+`postgres-data`, `redis-data`, `frontend-node-modules` et `vector-data`.
+
+### Technologies utilisées
+
+- Backend : Python 3.12, FastAPI, Uvicorn, SQLAlchemy asynchrone, asyncpg, Alembic, Pydantic
+  Settings, Redis, Celery, PyJWT, argon2-cffi, httpx et openpyxl.
+- Frontend : React 19, TypeScript, Vite, React Router, TanStack React Query, react-hook-form, zod,
+  lucide-react et CSS applicatif.
+- Infrastructure : Docker Compose, PostgreSQL 17, Redis 7.4, Nginx, OWASP ModSecurity CRS et Vector
+  pour l'export SIEM optionnel.
+- Scan et sécurité : mode mock, Nmap, WhatWeb, détecteur web interne, NVD, CVE/MITRE, OSV et deps.dev.
+- Tests et qualité : pytest, ruff, Vitest, Testing Library et Playwright.
+- Lanceur Windows : .NET 8 Windows Forms, publié sous le nom `MICEPP-Manager.exe`.
+
+### Services Docker
+
+- `postgres` stocke les utilisateurs, plateformes, services, imports, scans, vulnérabilités,
+  notifications et événements d'audit.
+- `redis` sert au courtier Celery, au backend de résultats et aux verrous/limites de débit.
+- `api` démarre les migrations Alembic, initialise l'administrateur, puis lance FastAPI sur le port
+  interne `8000`.
+- `frontend` lance Vite en développement ou sert le build statique en production.
+- `scanner-worker` exécute les jobs de scan dans la file Celery `scans`.
+- `protection-worker` exécute les contrôles périodiques de vulnérabilités dans la file `protection`.
+- `scheduler` lance Celery Beat et crée les jobs de protection lorsque leur prochaine exécution est
+  due.
+- `reverse-proxy` route `/` vers le frontend et `/api/*` vers l'API.
+- `waf` est l'unique point d'entrée publié. Par défaut, HTTP est publié sur
+  <http://localhost:8081> et HTTPS sur <https://localhost:8443>.
+- `log-collector` est optionnel et s'active avec le profil `siem` pour envoyer les logs vers un SIEM.
+
+### Démarrer, arrêter et reconstruire
+
+Pour démarrer l'environnement complet :
+
+```sh
+docker compose up --build
+```
+
+Pour démarrer en arrière-plan :
+
+```sh
+docker compose up -d
+```
+
+Pour arrêter sans supprimer les conteneurs ni les volumes :
+
+```sh
+docker compose stop
+```
+
+Pour arrêter et supprimer les conteneurs/réseaux Compose tout en gardant les volumes :
+
+```sh
+docker compose down
+```
+
+Pour reconstruire les images après modification du code ou des dépendances :
+
+```sh
+docker compose up -d --build
+```
+
+### Configuration principale
+
+La configuration est lue depuis l'environnement, avec `.env` comme fichier local conseillé. Les
+valeurs importantes sont :
+
+- `APP_ENV`, `APP_SECRET_KEY`, `APP_NAME`, `APP_VERSION`, `APP_LOG_LEVEL` pour l'environnement
+  applicatif.
+- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` pour PostgreSQL.
+- `REDIS_URL` pour Redis et Celery.
+- `ALLOWED_ORIGINS`, `HTTP_PORT`, `HTTPS_PORT`, `SERVER_NAME` pour l'exposition réseau.
+- `JWT_ALGORITHM`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `JWT_ACCESS_TTL_SECONDS`,
+  `JWT_REFRESH_TTL_SECONDS` pour l'authentification.
+- `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_ADMIN_DISPLAY_NAME` pour le
+  premier administrateur.
+- `SCAN_DETECTOR_MODE`, `ALLOWED_SCAN_NETWORKS`, `ALLOW_PRIVATE_NETWORK_SCANS`, `NMAP_BINARY`,
+  `WHATWEB_ENABLED` et `WHATWEB_BINARY` pour les scans.
+- `NVD_MODE`, `NVD_API_KEY`, `OSV_MODE`, `CVE_API_URL` pour les sources de vulnérabilités.
+- `REALTIME_DEFAULT_INTERVAL_SECONDS`, `REALTIME_BATCH_SIZE`, `REALTIME_MAX_CONCURRENCY` pour la
+  protection périodique.
+- `WAF_MODE`, `WAF_BLOCKING_PARANOIA`, `WAF_DETECTION_PARANOIA`, `WAF_CORS_ALLOW_ORIGIN` pour le WAF.
+
+En développement, `NVD_MODE=mock` et `SCAN_DETECTOR_MODE=mock` évitent les appels ou scans réels par
+défaut. En production, le projet exige des secrets explicites, RS256, des clés JWT et des certificats
+TLS.
+
+### Fonctionnement métier
+
+- Authentification : l'utilisateur se connecte avec un identifiant et un mot de passe. L'access token
+  reste en mémoire dans React, le refresh token est stocké en cookie HttpOnly, et les endpoints
+  sensibles utilisent un jeton CSRF.
+- Plateformes : une plateforme représente une application, un site, un serveur ou une cible à suivre.
+  Elle peut avoir une URL, une adresse IP ou aucune cible.
+- Services et catégories : les services représentent les technologies ou composants présents sur une
+  plateforme. Ils peuvent être ajoutés manuellement, importés depuis Excel ou confirmés après scan.
+- Import Excel : le fichier `.xlsx` est lu en mode sécurisé, transformé en aperçu, puis confirmé
+  explicitement avant création des services.
+- Scans contrôlés : l'API valide la cible, crée un job, puis `scanner-worker` détecte des services.
+  Aucun résultat n'entre dans l'inventaire sans confirmation utilisateur.
+- Vulnérabilités : les services sont rapprochés de CPE, CVE, NVD et OSV. Les résultats actifs créent
+  ou mettent à jour des liens service/vulnérabilité.
+- Protection périodique : `scheduler` vérifie si une exécution est due, `protection-worker` traite les
+  services par lots et Redis empêche deux exécutions globales simultanées.
+- Notifications et audit : les notifications sont propres à chaque utilisateur, tandis que les
+  événements d'audit sont conservés comme historique immuable.
+
+### Lanceur Windows `MICEPP-Manager.exe`
+
+Le lanceur est une application Windows Forms qui exécute `docker.exe` dans le dossier contenant
+`docker-compose.yml`. Il évite d'avoir à taper les commandes Docker à la main.
+
+- `Démarrer` exécute `docker compose up -d`. Il démarre les services en arrière-plan.
+- `Arrêter` exécute `docker compose stop`. Il arrête les conteneurs sans supprimer les volumes.
+- `Redémarrer` exécute `docker compose restart`. Il relance les conteneurs existants.
+- `Reconstruire` exécute `docker compose up -d --build`. Il reconstruit les images puis relance
+  l'application.
+- `Ouvrir le site` ouvre <http://localhost:8081> dans le navigateur.
+- `Actualiser l'état` exécute `docker compose ps --format "{{.Service}}|{{.State}}"` et affiche le
+  nombre de services actifs.
+- `Afficher les logs` exécute
+  `docker compose logs --tail 120 api frontend protection-worker scanner-worker` et affiche les
+  derniers logs utiles.
+
+Le lanceur actualise l'état toutes les cinq secondes. Pendant une opération, il désactive les boutons
+principaux pour éviter de lancer deux commandes Docker en même temps.
 
 ## Commandes utiles
 
@@ -236,6 +393,92 @@ les réponses publiques portent CSP, HSTS, protection anti-clickjacking et polit
 
 Les détails et limites sont décrits dans [docs/architecture.md](docs/architecture.md).
 
+### Sécurité applicative détaillée
+
+MICEPP-Tracker applique plusieurs couches de sécurité complémentaires. Le navigateur n'accède jamais
+directement à PostgreSQL, Redis, l'API ou aux workers : le WAF est le seul point d'entrée publié,
+puis Nginx relaie le trafic vers les services internes. Les réseaux Docker `backend` et `frontend`
+limitent les communications entre conteneurs ; PostgreSQL et Redis ne publient aucun port hôte.
+
+L'authentification repose sur un access token JWT court et un refresh token opaque. L'access token
+reste uniquement en mémoire côté React. Le refresh token est stocké dans un cookie `HttpOnly`,
+`SameSite=Strict`, et `Secure` en production. En base, le refresh token brut n'est jamais conservé :
+seul son hash SHA-256 est stocké. À chaque renouvellement, le refresh token est remplacé ; si un
+ancien refresh token est réutilisé, toute sa famille de sessions est révoquée.
+
+Les mots de passe sont hashés avec Argon2 (`argon2-cffi`). La politique de robustesse impose au
+minimum 12 caractères, une majuscule, une minuscule, un chiffre et un caractère spécial. Le compte
+administrateur initial est créé uniquement si aucun utilisateur n'existe, et le changement du mot de
+passe initial est imposé.
+
+Les actions applicatives passent par un contrôle RBAC. Les permissions comme `platform.read`,
+`platform.create`, `platform.scan`, `service.import`, `settings.update` ou `user.manage` sont
+associées aux rôles et vérifiées côté API. Un utilisateur qui doit encore changer son mot de passe
+initial ne peut pas accéder aux routes métier protégées.
+
+Les endpoints sensibles utilisent une protection CSRF double-submit : le frontend envoie le jeton
+`X-CSRF-Token`, et l'API le compare au cookie CSRF. Les tentatives de connexion, refresh token,
+imports, scans, contrôles manuels et lancements de protection périodique sont limités avec Redis. Un
+dépassement retourne `429` et évite de lancer un traitement coûteux.
+
+Les scans sont protégés contre les usages dangereux. Les cibles doivent être des URL HTTP(S) ou des
+adresses IP valides. Les identifiants intégrés dans les URL sont interdits. Par défaut, les adresses
+loopback, link-local, multicast, réservées et privées sont bloquées. Les réseaux privés ne sont
+autorisés que via `ALLOW_PRIVATE_NETWORK_SCANS=true` ou une allowlist `ALLOWED_SCAN_NETWORKS`. Le
+worker revérifie aussi la résolution DNS afin de limiter les attaques de type DNS rebinding.
+
+Nginx ajoute des en-têtes de sécurité publics : `Content-Security-Policy`,
+`Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Permissions-Policy`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy` et
+`X-Request-ID`. En développement, le WAF est en `DetectionOnly`; en production, la surcharge Compose
+force le mode bloquant, la redirection HTTPS et TLS 1.2/1.3.
+
+### Journaux, audit et consultation
+
+Il existe deux familles de traces : les logs techniques Docker et l'audit métier stocké en base.
+
+Les logs techniques sont écrits sur `stdout`/`stderr` par les conteneurs, puis collectés par Docker.
+Ils ne sont donc pas stockés dans un fichier du dépôt. On les consulte avec `docker compose logs`.
+L'API produit des logs JSON avec timestamp, niveau, service, environnement, logger, message,
+`request_id`, `user_id`, IP client, méthode HTTP, chemin, statut et durée. Les valeurs sensibles
+comme `Authorization`, cookies, mots de passe, secrets, tokens, API keys et identifiants dans les URL
+sont masquées avant écriture.
+
+Le reverse proxy Nginx écrit aussi des logs JSON avec timestamp, service `reverse-proxy`,
+`request_id`, adresse distante, méthode, chemin, statut et temps de requête. Le WAF ModSecurity écrit
+ses audits JSON sur `stdout`, ce qui permet de voir les règles OWASP CRS déclenchées et les éventuels
+faux positifs.
+
+Commandes utiles :
+
+```sh
+docker compose logs -f
+docker compose logs -f api
+docker compose logs -f reverse-proxy
+docker compose logs -f waf
+docker compose logs -f api frontend scanner-worker protection-worker
+docker compose logs --tail 120 api frontend protection-worker scanner-worker
+```
+
+Le bouton `Afficher les logs` du lanceur Windows exécute la dernière commande et affiche les 120
+dernières lignes des services applicatifs principaux.
+
+L'audit métier est différent des logs techniques. Il est stocké dans PostgreSQL, dans la table
+`audit_events`. Il conserve les événements importants comme les connexions réussies ou échouées, les
+déconnexions, changements de mot de passe, modifications de plateformes, imports, confirmations de
+scan et exécutions de protection périodique. Chaque événement peut contenir l'acteur, l'IP, le
+`request_id`, le type d'entité, l'identifiant d'entité, le contexte de plateforme, un résumé et des
+données avant/après lorsque c'est utile.
+
+Vector peut être activé avec le profil `siem` pour exporter les logs Docker vers un SIEM externe. Il
+parse les logs JSON, retire une seconde fois les champs sensibles connus, conserve un tampon disque
+dans le volume `vector-data`, puis envoie les événements en HTTPS avec un jeton Bearer.
+
+```sh
+SIEM_ENDPOINT=https://siem.example.test/ingest SIEM_TOKEN=replace-me \
+docker compose --profile siem up -d log-collector
+```
+
 ## NVD et suivi des vulnérabilités
 
 La fiche d’un service permet de rechercher les CPE NVD, valider manuellement un candidat ambigu,
@@ -280,7 +523,7 @@ celery -A app.worker.celery_app beat --loglevel=INFO
 
 ## Durcissement, TLS et WAF (phase 10)
 
-En développement, `docker compose up --build` publie HTTP sur le port 8080 et HTTPS sur 8443 avec
+En développement, `docker compose up --build` publie HTTP sur le port 8081 et HTTPS sur 8443 avec
 le certificat local fourni par l’image WAF. ModSecurity fonctionne en `DetectionOnly` : les règles
 OWASP CRS journalisent les détections sans bloquer. Consultez-les avec :
 
@@ -338,7 +581,7 @@ Docker ne remplacent pas une sauvegarde externalisée et chiffrée.
 cd backend
 pytest tests/test_security_hardening.py
 cd ..
-powershell -File scripts/security-smoke.ps1 -BaseUrl http://localhost:8080
+powershell -File scripts/security-smoke.ps1 -BaseUrl http://localhost:8081
 ```
 
 Le script vérifie les en-têtes publics et les limites de base. Les tests de blocage CRS doivent être
