@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   History,
   LayoutDashboard,
+  ListChecks,
   Moon,
   Power,
   Server,
@@ -9,10 +10,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 import { ApiError } from "../api/client";
+import { trackPageView } from "../api/history";
 import { createPlatform, type PlatformInput } from "../api/platforms";
 import { useAuth } from "../auth/AuthProvider";
 import { ModalPortal } from "../components/ModalPortal";
@@ -43,7 +45,34 @@ const navigation = [
     permission: "user.read",
     icon: Users,
   },
+  {
+    to: "/my-treatments",
+    label: "Traitements à faire",
+    permission: "treatment.read_own",
+    icon: ListChecks,
+  },
+  {
+    to: "/treatments",
+    label: "Demandes de traitement",
+    permission: "treatment.review",
+    icon: ListChecks,
+  },
 ];
+
+function activityPageTitle(pathname: string): string {
+  if (pathname === "/") return "Tableau de bord";
+  if (pathname === "/platforms") return "Plateformes";
+  if (pathname.startsWith("/platforms/")) return "Détail d’une plateforme";
+  if (pathname.startsWith("/services/")) return "Détail d’un service";
+  if (pathname.startsWith("/vulnerabilities/")) return "Détail d’une vulnérabilité";
+  if (pathname === "/notifications") return "Notifications";
+  if (pathname === "/activity") return "Historique des activités";
+  if (pathname === "/settings") return "Paramètres";
+  if (pathname === "/users") return "Utilisateurs et permissions";
+  if (pathname === "/my-treatments") return "Traitements à faire";
+  if (pathname === "/treatments") return "Demandes de traitement";
+  return pathname;
+}
 
 function CreatePlatformControl() {
   const navigate = useNavigate();
@@ -135,12 +164,28 @@ function CreatePlatformControl() {
 
 export function AppLayout() {
   const auth = useAuth();
+  const location = useLocation();
   const [theme, setTheme] = useState<"dark" | "light">(() =>
     document.documentElement.dataset.theme === "light" ? "light" : "dark",
   );
+  const lastTrackedPath = useRef<string | null>(null);
   const role =
     auth.user?.roles?.join(", ") ||
     (auth.hasPermission("user.manage") ? "Administrateur" : "Utilisateur");
+  const usesDocumentScroll =
+    location.pathname.startsWith("/services/") ||
+    location.pathname.startsWith("/vulnerabilities/") ||
+    location.pathname === "/activity" ||
+    location.pathname === "/treatments" ||
+    location.pathname === "/my-treatments";
+
+  useEffect(() => {
+    if (lastTrackedPath.current === location.pathname) return;
+    lastTrackedPath.current = location.pathname;
+    void trackPageView(location.pathname, activityPageTitle(location.pathname)).catch(() => {
+      // Le suivi ne doit jamais bloquer la navigation principale.
+    });
+  }, [location.pathname]);
 
   function toggleTheme() {
     const nextTheme = theme === "dark" ? "light" : "dark";
@@ -150,7 +195,9 @@ export function AppLayout() {
   }
 
   return (
-    <div className="dashboard-layout">
+    <div
+      className={`dashboard-layout${usesDocumentScroll ? " dashboard-layout--document-scroll" : ""}`}
+    >
       <aside className="sidebar">
         <div className="sidebar__brand">
           <span>MICEPP - TRACKER</span>

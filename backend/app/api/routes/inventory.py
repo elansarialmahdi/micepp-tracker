@@ -24,14 +24,14 @@ from app.repositories.inventory import (
 )
 from app.repositories.platforms import get_platform
 from app.schemas.service import (
+    AICategorizationConfirmedItem,
+    AICategorizationConfirmRequest,
+    AICategorizationConfirmResponse,
+    AICategorizationPreviewResponse,
+    AICategorizationPreviewSuggestion,
     AICategorizationRequest,
     AICategorizationResponse,
     AICategorizationSuggestion,
-    AICategorizationConfirmRequest,
-    AICategorizationConfirmResponse,
-    AICategorizationConfirmedItem,
-    AICategorizationPreviewResponse,
-    AICategorizationPreviewSuggestion,
     CategoryCreate,
     CategoryResponse,
     CategoryUpdate,
@@ -121,23 +121,47 @@ async def categories_create(
     user: ServiceCreator,
 ) -> Category:
     required_platform(await get_platform(db, platform_id), active=True)
-    category = Category(
-        name=payload.name,
-        normalized_name=normalized_name(payload.name),
-        description=payload.description,
-    )
-    db.add(category)
+    key = normalized_name(payload.name)
+    category = await db.scalar(select(Category).where(Category.normalized_name == key))
+    if category is not None and category.archived_at is None:
+        raise AppError(
+            409,
+            "CATEGORY_DUPLICATE",
+            "Une catégorie portant ce nom existe déjà.",
+        )
+
+    restored = category is not None
+    if category is None:
+        category = Category(
+            name=payload.name,
+            normalized_name=key,
+            description=payload.description,
+        )
+        db.add(category)
+    else:
+        category.name = payload.name
+        category.description = payload.description
+        category.archived_at = None
+
     try:
         await db.flush()
         record_audit(
             db,
             actor_user_id=user.id,
-            action="category.create",
+            action="category.restore" if restored else "category.create",
             entity_type="category",
             entity_id=category.id,
             platform_id=platform_id,
-            summary=f"Catégorie créée : {category.name}",
-            after_data={"name": category.name, "description": category.description},
+            summary=(
+                f"Catégorie restaurée : {category.name}"
+                if restored
+                else f"Catégorie créée : {category.name}"
+            ),
+            after_data={
+                "name": category.name,
+                "description": category.description,
+                "archived_at": None,
+            },
             **request_audit_context(request),
         )
         await db.commit()
@@ -150,8 +174,12 @@ async def categories_create(
         ) from exc
     await db.refresh(category)
     logger.info(
-        "category_created",
-        extra={"user_id": str(user.id), "action": "category.create", "result": "succeeded"},
+        "category_restored" if restored else "category_created",
+        extra={
+            "user_id": str(user.id),
+            "action": "category.restore" if restored else "category.create",
+            "result": "succeeded",
+        },
     )
     return category
 
@@ -228,7 +256,15 @@ async def categories_ai_confirm(
     user: ServiceCreator,
 ) -> AICategorizationConfirmResponse:
     required_platform(await get_platform(db, platform_id), active=True)
-    existing = await list_categories(db, platform_id)
+    requested_keys = {
+        normalized_name(item.category_name) for item in payload.items if item.selected
+    }
+    existing: list[Category] = []
+    if requested_keys:
+        result = await db.scalars(
+            select(Category).where(Category.normalized_name.in_(requested_keys))
+        )
+        existing = list(result.all())
     categories = {category.normalized_name: category for category in existing}
     confirmed: list[tuple[str, Category]] = []
     context = request_audit_context(request)
@@ -255,6 +291,19 @@ async def categories_ai_confirm(
                 platform_id=platform_id,
                 summary=f"Catégorie IA confirmée : {category.name}",
                 after_data={"name": category.name, "confirmed": True},
+                **context,
+            )
+        elif category.archived_at is not None:
+            category.archived_at = None
+            record_audit(
+                db,
+                actor_user_id=user.id,
+                action="category.restore.ai.confirmed",
+                entity_type="category",
+                entity_id=category.id,
+                platform_id=platform_id,
+                summary=f"Catégorie IA restaurée : {category.name}",
+                after_data={"name": category.name, "confirmed": True, "archived_at": None},
                 **context,
             )
         confirmed.append((item.key, category))

@@ -32,15 +32,17 @@ export function DashboardPage() {
       <div className="dashboard-columns">
         <section className="dashboard-panel platform-panel" aria-labelledby="dashboard-platforms-title">
           <h2 id="dashboard-platforms-title" className="sr-only">Plateformes</h2>
-          <label className="search-input" htmlFor="dashboard-platform-search">
-            <Search aria-hidden="true" />
-            <input
-              id="dashboard-platform-search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Rechercher dans les plateformes"
-            />
-          </label>
+          <div className="dashboard-search-card">
+            <label className="search-input" htmlFor="dashboard-platform-search">
+              <Search aria-hidden="true" />
+              <input
+                id="dashboard-platform-search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Rechercher dans les plateformes"
+              />
+            </label>
+          </div>
           {platforms.isPending && <p role="status">Chargement des plateformes…</p>}
           {platforms.isError && <div className="form-error" role="alert">Impossible de charger les plateformes.</div>}
           <div className="dashboard-scroll platform-feed">

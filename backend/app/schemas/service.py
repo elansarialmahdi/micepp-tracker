@@ -148,6 +148,7 @@ class ServiceResponse(BaseModel):
     product: str | None
     version: str | None
     cpe_uri: str | None
+    cpe_enabled: bool
     cpe_match_confidence: float | None
     cpe_match_method: str | None
     security_identity: dict | None = None

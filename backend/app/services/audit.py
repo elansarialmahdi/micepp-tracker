@@ -8,6 +8,23 @@ from app.models.notification import AuditEvent, Notification
 from app.models.platform import Platform
 
 
+def browser_name(user_agent: str | None) -> str:
+    value = user_agent or ""
+    for marker, label in (
+        ("Edg/", "Microsoft Edge"),
+        ("OPR/", "Opera"),
+        ("Firefox/", "Firefox"),
+        ("Chrome/", "Google Chrome"),
+        ("Version/", "Safari"),
+        ("PostmanRuntime/", "Postman"),
+        ("curl/", "curl"),
+    ):
+        if marker in value:
+            version = value.split(marker, 1)[1].split(" ", 1)[0]
+            return f"{label} {version}"
+    return "Navigateur inconnu" if value else "Client non renseigné"
+
+
 def request_audit_context(request: Request) -> dict[str, str | None]:
     forwarded = request.headers.get("x-forwarded-for")
     ip = forwarded.split(",", 1)[0].strip() if forwarded else None
@@ -16,6 +33,14 @@ def request_audit_context(request: Request) -> dict[str, str | None]:
     return {
         "ip": ip,
         "request_id": getattr(request.state, "request_id", None),
+    }
+
+
+def request_client_metadata(request: Request) -> dict[str, Any]:
+    user_agent = request.headers.get("user-agent")
+    return {
+        "browser": browser_name(user_agent),
+        "user_agent": user_agent[:500] if user_agent else None,
     }
 
 

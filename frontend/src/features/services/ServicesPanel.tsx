@@ -6,6 +6,7 @@ import {
   FolderPlus,
   MoreHorizontal,
   Plus,
+  ShieldCheck,
   Trash2,
   X,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
   type Service,
   type ServiceInput,
 } from "../../api/inventory";
+import { createTreatment, getTreatmentAssignees } from "../../api/treatments";
 import { useAuth } from "../../auth/AuthProvider";
 import { CustomSelect } from "../../components/CustomSelect";
 import { ModalPortal } from "../../components/ModalPortal";
@@ -146,6 +148,41 @@ function ServiceEditModal({
   );
 }
 
+function TreatmentAssignmentModal({ service, onClose }: { service: Service; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const assignees = useQuery({
+    queryKey: ["treatment-assignees"],
+    queryFn: ({ signal }) => getTreatmentAssignees(signal),
+  });
+  const [assigneeId, setAssigneeId] = useState("");
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (!assigneeId && assignees.data?.[0]) setAssigneeId(assignees.data[0].id);
+  }, [assigneeId, assignees.data]);
+  const assignment = useMutation({
+    mutationFn: () => createTreatment({ service_id: service.id, assigned_to_id: assigneeId, note: note.trim() || null }),
+  });
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await assignment.mutateAsync();
+    await queryClient.invalidateQueries({ queryKey: ["treatments"] });
+    onClose();
+  }
+  return (
+    <ModalPortal><div className="modal-backdrop form-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="settings-modal treatment-assignment-modal form-dialog" role="dialog" aria-modal="true" aria-labelledby="assign-treatment-title">
+        <div className="section-header"><div><p className="eyebrow">Service vulnérable</p><h2 id="assign-treatment-title">{service.name} · {service.version ?? "Version non renseignée"}</h2></div><button type="button" aria-label="Fermer" onClick={onClose}><X aria-hidden="true" /></button></div>
+        <form className="platform-form" onSubmit={(event) => void submit(event)}>
+          <div className="form-field"><label htmlFor="assign-handler">Traitant</label><CustomSelect id="assign-handler" value={assigneeId} onChange={setAssigneeId} options={(assignees.data ?? []).map((item) => ({ value: item.id, label: `${item.display_name} (@${item.username})` }))} placeholder="Aucun traitant disponible" /></div>
+          <div className="form-field"><label htmlFor="assignment-note">Note (optionnelle)</label><textarea id="assignment-note" rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Contexte, serveur concerné, consignes…" /></div>
+          {assignment.error && <div className="form-error" role="alert">{assignment.error instanceof ApiError ? assignment.error.message : "L’attribution a échoué."}</div>}
+          <div className="form-actions"><button type="button" onClick={onClose}>Annuler</button><button className="primary-button" type="submit" disabled={assignment.isPending || !assigneeId}><ShieldCheck aria-hidden="true" /> Attribuer</button></div>
+        </form>
+      </section>
+    </div></ModalPortal>
+  );
+}
+
 export function ServicesPanel({
   platformId,
   archived,
@@ -165,19 +202,13 @@ export function ServicesPanel({
   const showCategories = categoriesOpen ?? internalCategoriesOpen;
   const [categoryName, setCategoryName] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [assigningService, setAssigningService] = useState<Service | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterSubmenu, setFilterSubmenu] = useState<
     "vulnerability" | "sort" | "category" | null
   >(null);
   const filterRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!openMenu) return;
-    const closeMenu = (event: PointerEvent) => {
-      if (!(event.target as Element).closest(".action-menu")) setOpenMenu(null);
-    };
-    document.addEventListener("pointerdown", closeMenu);
-    return () => document.removeEventListener("pointerdown", closeMenu);
-  }, [openMenu]);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const category = params.get("category") ?? "";
   const vulnerability = params.get("vulnerability") ?? "";
@@ -613,7 +644,10 @@ export function ServicesPanel({
                       ) : (
                         <span>Aucune vulnérabilité connue</span>
                       )}
-                      <div className="action-menu">
+                      <div
+                        className="action-menu"
+                        ref={openMenu === service.id ? actionMenuRef : undefined}
+                      >
                         <button
                           className="service-row-action"
                           type="button"
@@ -629,7 +663,11 @@ export function ServicesPanel({
                           <MoreHorizontal aria-hidden="true" />
                         </button>
                         {openMenu === service.id && (
-                          <div className="action-menu__content">
+                          <ViewportMenuPortal
+                            anchorRef={actionMenuRef}
+                            className="action-menu__content"
+                            onRequestClose={() => setOpenMenu(null)}
+                          >
                             {auth.hasPermission("service.update") && (
                               <button
                                 type="button"
@@ -639,6 +677,17 @@ export function ServicesPanel({
                                 }}
                               >
                                 Modifier
+                              </button>
+                            )}
+                            {auth.hasPermission("treatment.assign") && (service.active_vulnerability_count ?? 0) > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAssigningService(service);
+                                  setOpenMenu(null);
+                                }}
+                              >
+                                Traiter la vulnérabilité
                               </button>
                             )}
                             {auth.hasPermission("service.archive") && (
@@ -652,7 +701,7 @@ export function ServicesPanel({
                                 Supprimer
                               </button>
                             )}
-                          </div>
+                          </ViewportMenuPortal>
                         )}
                       </div>
                     </div>
@@ -703,6 +752,12 @@ export function ServicesPanel({
               }),
             ]);
           }}
+        />
+      )}
+      {assigningService && (
+        <TreatmentAssignmentModal
+          service={assigningService}
+          onClose={() => setAssigningService(null)}
         />
       )}
     </section>

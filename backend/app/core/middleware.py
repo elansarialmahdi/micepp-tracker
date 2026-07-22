@@ -16,6 +16,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
+            duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
             logger.exception(
                 "request_failed",
                 extra={
@@ -26,7 +27,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                     "method": request.method,
                     "path": request.url.path,
                     "status_code": 500,
-                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                    "duration_ms": duration_ms,
                     "result": "failure",
                 },
             )

@@ -12,7 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
 import { ApiError } from "../api/client";
@@ -24,6 +24,7 @@ import {
 } from "../api/platforms";
 import { useAuth } from "../auth/AuthProvider";
 import { ModalPortal } from "../components/ModalPortal";
+import { ViewportMenuPortal } from "../components/ViewportMenuPortal";
 import { HistoryPanel } from "../features/history/HistoryPanel";
 import { PlatformForm } from "../features/platforms/PlatformForm";
 import { ServicesPanel } from "../features/services/ServicesPanel";
@@ -50,16 +51,7 @@ export function PlatformDetailPage() {
   const [addingServices, setAddingServices] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [addMethod, setAddMethod] = useState<AddMethod>("choice");
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeMenu = (event: PointerEvent) => {
-      if (!(event.target as Element).closest(".action-menu"))
-        setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", closeMenu);
-    return () => document.removeEventListener("pointerdown", closeMenu);
-  }, [menuOpen]);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
 
   const closeAddServices = () => {
     setAddingServices(false);
@@ -126,7 +118,7 @@ export function PlatformDetailPage() {
                 Ajouter des services
               </button>
             )}
-            <div className="action-menu">
+            <div className="action-menu" ref={actionMenuRef}>
               <button
                 type="button"
                 aria-label="Actions de la plateforme"
@@ -137,7 +129,11 @@ export function PlatformDetailPage() {
                 <MoreHorizontal aria-hidden="true" />
               </button>
               {menuOpen && (
-                <div className="action-menu__content">
+                <ViewportMenuPortal
+                  anchorRef={actionMenuRef}
+                  className="action-menu__content"
+                  onRequestClose={() => setMenuOpen(false)}
+                >
                   {auth.hasPermission("service.create") && (
                     <button
                       type="button"
@@ -178,7 +174,7 @@ export function PlatformDetailPage() {
                       Supprimer
                     </button>
                   )}
-                </div>
+                </ViewportMenuPortal>
               )}
             </div>
           </div>
@@ -250,14 +246,14 @@ export function PlatformDetailPage() {
       {addingServices && (
         <ModalPortal>
           <div
-            className="modal-backdrop"
+            className={`modal-backdrop${addMethod === "manual" ? " form-modal-backdrop" : ""}`}
             role="presentation"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) closeAddServices();
             }}
           >
             <section
-              className={`settings-modal add-services-modal add-services-modal--${addMethod}`}
+              className={`settings-modal add-services-modal add-services-modal--${addMethod}${addMethod === "manual" ? " form-dialog" : ""}`}
               role="dialog"
               aria-modal="true"
               aria-labelledby="add-services-choice-title"

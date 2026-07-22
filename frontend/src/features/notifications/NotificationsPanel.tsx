@@ -41,6 +41,8 @@ export function NotificationsPanel() {
   const notifications = useQuery({
     queryKey: ["notifications", showTrash],
     queryFn: ({ signal }) => getNotifications(signal, showTrash),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
   });
   const hideAll = useMutation({
     mutationFn: hideAllNotifications,

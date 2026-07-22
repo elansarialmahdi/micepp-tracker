@@ -300,6 +300,8 @@ async def _sync_service_threat_notification(
                 .where(
                     ServiceVulnerability.service_id == service.id,
                     ServiceVulnerability.resolved_at.is_(None),
+                    ServiceVulnerability.ignored_at.is_(None),
+                    ServiceVulnerability.match_state.in_(("confirmed", "probable")),
                 )
             )
         ).all()
@@ -456,6 +458,15 @@ async def _check_osv(
 
 async def check_service(db: AsyncSession, service: Service, settings: Settings) -> dict[str, Any]:
     now = datetime.now(UTC)
+    if not service.cpe_enabled:
+        return {
+            "status": "disabled",
+            "source": None,
+            "cpe_uri": None,
+            "candidates": 0,
+            "active_vulnerabilities": 0,
+            "new_notifications": 0,
+        }
     osv_client = OSVClient(settings)
     detector = str((service.source_details or {}).get("detector", "")).lower()
     if detector == "nmap":

@@ -25,7 +25,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --app-background: #070812;
-  --app-background-image: url("/assets/darkmod-bg.svg");
+  --app-background-image: url("/assets/darkmod-bg.jpg");
   --surface: rgb(30 32 73 / 0.66);
   --surface-solid: #17182f;
   --surface-subtle: rgb(255 255 255 / 0.05);
@@ -48,7 +48,7 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --app-background: #edf3f8;
-  --app-background-image: url("/assets/lightmod-bg.svg");
+  --app-background-image: url("/assets/lightmod-bg.jpg");
   --surface: rgb(255 255 255 / 0.16);
   --surface-solid: #e6edf6;
   --surface-subtle: rgb(255 255 255 / 0.16);
@@ -82,6 +82,7 @@ body {
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
+  background-attachment: fixed;
   transition: color 180ms ease, background-color 180ms ease;
 }
 
@@ -1076,7 +1077,7 @@ p {
   padding: 24px;
   color: #fff;
   background-color: #070812;
-  background-image: url("/assets/darkmod-bg.svg");
+  background-image: url("/assets/darkmod-bg.jpg");
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
@@ -4159,6 +4160,427 @@ a[data-tooltip][data-tooltip-placement="left"]:focus-visible::after {
   }
 }
 
+/* Global activity journal */
+.activity-page {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 24px;
+}
+
+.activity-page > .activity-page__header {
+  margin-bottom: 0;
+}
+
+.activity-page__header > div:first-child {
+  min-width: 0;
+}
+
+.activity-page__header .eyebrow {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.activity-page__intro {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.activity-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.activity-clear-button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 36px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+}
+
+.activity-clear-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.activity-live {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 11px;
+  color: var(--text-muted);
+  font-size: 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.activity-live > span {
+  width: 8px;
+  height: 8px;
+  background: var(--safe);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--safe) 18%, transparent);
+}
+
+.activity-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.activity-stats article {
+  display: flex;
+  min-height: 92px;
+  gap: 13px;
+  align-items: center;
+  padding: 17px 20px;
+  background: var(--panel-fill);
+  border: 1px solid var(--border);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(30px);
+}
+
+.activity-stats article > svg {
+  width: 35px;
+  height: 35px;
+  padding: 8px;
+  color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--focus) 30%, transparent);
+  border-radius: 4px;
+}
+
+.activity-stats article > div {
+  display: grid;
+  gap: 2px;
+}
+
+.activity-stats span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.activity-stats strong {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.activity-stats .activity-stat--success > svg {
+  color: var(--safe);
+  background: color-mix(in srgb, var(--safe) 10%, transparent);
+  border-color: color-mix(in srgb, var(--safe) 28%, transparent);
+}
+
+.activity-stats .activity-stat--failure > svg {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.activity-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(190px, 250px);
+  gap: 9px;
+  padding: 13px;
+  background: var(--panel-fill);
+  border: 1px solid var(--border);
+  box-shadow: var(--panel-shadow);
+}
+
+.activity-search {
+  background: var(--surface-subtle);
+}
+
+.activity-search input {
+  color: var(--text);
+  background: transparent;
+}
+
+.activity-result-select,
+.activity-result-select .custom-select__trigger {
+  width: 100%;
+}
+
+.activity-result-select .custom-select__trigger {
+  min-height: 41px;
+  justify-content: space-between;
+}
+
+.activity-feed {
+  display: grid;
+  gap: 8px;
+}
+
+.activity-event {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 13px;
+  padding: 15px 17px;
+  background: var(--panel-fill);
+  border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--focus) 60%, transparent);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(30px);
+}
+
+.activity-event--failure {
+  border-left-color: var(--danger-strong);
+}
+
+.activity-event__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--focus) 25%, transparent);
+  border-radius: 4px;
+  place-items: center;
+}
+
+.activity-event--failure .activity-event__icon {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+.activity-event__icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.activity-event__content {
+  min-width: 0;
+}
+
+.activity-event__heading {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.activity-event__heading h2 {
+  margin: 5px 0 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.4;
+}
+
+.activity-event__heading time {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.activity-result {
+  display: inline-flex;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 3px;
+}
+
+.activity-result--success {
+  color: var(--safe);
+  background: color-mix(in srgb, var(--safe) 8%, transparent);
+  border-color: color-mix(in srgb, var(--safe) 28%, transparent);
+}
+
+.activity-result--failure {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.activity-event__meta {
+  display: flex;
+  gap: 7px 15px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.activity-event__meta > span {
+  display: inline-flex;
+  min-width: 0;
+  gap: 5px;
+  align-items: center;
+}
+
+.activity-event__meta svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+}
+
+.activity-event__details {
+  margin-top: 11px;
+  color: var(--text-muted);
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+}
+
+.activity-event__details summary {
+  width: fit-content;
+  padding-top: 10px;
+  cursor: pointer;
+}
+
+.activity-event__details dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.activity-event__details dl > div {
+  min-width: 0;
+  padding: 8px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+}
+
+.activity-event__details dt {
+  margin-bottom: 3px;
+  color: var(--text-muted);
+}
+
+.activity-event__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.activity-event__json {
+  margin-top: 8px;
+}
+
+.activity-event__json pre {
+  max-width: 100%;
+  padding: 10px;
+  overflow-x: auto;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--app-background) 65%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.activity-state,
+.activity-empty {
+  padding: 30px;
+  margin: 0;
+  text-align: center;
+  background: var(--panel-fill);
+  border: 1px solid var(--border);
+}
+
+.activity-empty svg {
+  width: 35px;
+  height: 35px;
+  color: var(--text-muted);
+}
+
+.activity-empty h2 {
+  margin: 9px 0 4px;
+  font-size: 16px;
+}
+
+.activity-empty p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.activity-pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  background: var(--panel-fill);
+  border: 1px solid var(--border);
+}
+
+.activity-pagination button {
+  display: inline-flex;
+  min-height: 34px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+}
+
+.activity-pagination button svg {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 760px) {
+  .activity-page__actions {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .activity-stats,
+  .activity-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-event__heading {
+    display: grid;
+  }
+
+  .activity-event__heading time {
+    white-space: normal;
+  }
+
+  .activity-event__details dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .activity-event {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-pagination {
+    justify-content: space-between;
+  }
+
+  .activity-pagination button {
+    font-size: 0;
+  }
+
+  .activity-pagination button svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
 /* Shared category and select menus */
 .custom-select__menu--viewport {
   position: fixed !important;
@@ -4814,5 +5236,906 @@ a[data-tooltip][data-tooltip-placement="left"]:focus-visible::after {
   .platforms-page {
     padding-left: 9px;
     box-sizing: border-box;
+  }
+}
+
+/* Service and vulnerability details use the app's single main scrollbar. */
+.service-detail-page,
+.vulnerability-detail-page {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
+.service-detail-columns {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  align-items: start;
+}
+
+.service-overview-panel,
+.service-vulnerabilities-panel {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: auto;
+}
+
+.service-vulnerabilities-panel > .table-wrapper {
+  overflow: visible;
+}
+
+.vulnerability-back-button {
+  display: inline-flex;
+  min-height: 38px;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 11px;
+  color: var(--text);
+  line-height: 1;
+  text-decoration: none;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.vulnerability-back-button:hover {
+  color: var(--text);
+  text-decoration: none;
+  background: color-mix(in srgb, var(--surface-subtle) 88%, var(--text) 7%);
+  border-color: var(--border-strong);
+}
+
+.vulnerability-back-button svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.vulnerability-detail-grid {
+  align-items: start;
+}
+
+.vulnerability-detail-main,
+.vulnerability-detail-aside,
+.vulnerability-detail-panel,
+.vulnerability-resources-panel ul,
+.vulnerability-technical-panel pre {
+  max-height: none;
+  overflow: visible;
+}
+
+.vulnerability-technical-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vulnerability-resources-panel a {
+  min-width: 0;
+}
+
+.vulnerability-resources-panel ul,
+.vulnerability-resources-panel li,
+.vulnerability-resources-panel a {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.vulnerability-resources-panel li {
+  overflow: hidden;
+}
+
+.vulnerability-resources-panel a span {
+  display: block;
+}
+
+/* Detail screens grow with their content and use the browser's single scrollbar. */
+.dashboard-layout--document-scroll {
+  height: auto;
+  min-height: 100vh;
+  overflow: visible;
+  align-items: start;
+}
+
+.dashboard-layout--document-scroll .dashboard-content {
+  height: auto;
+  min-height: calc(100vh - 84px);
+  overflow: visible;
+}
+
+html:has(.dashboard-layout--document-scroll) {
+  background-color: var(--app-background);
+  background-image: var(--app-background-image);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+@media (min-width: 769px) {
+  .dashboard-layout--document-scroll .sidebar {
+    position: sticky;
+    top: 42px;
+    height: calc(100vh - 84px);
+    max-height: calc(100vh - 84px);
+  }
+}
+
+.security-identification {
+  gap: 13px;
+}
+
+.security-identification__header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.security-identification__actions,
+.vulnerability-list-actions,
+.vulnerability-row-actions {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.security-identification__actions {
+  justify-content: flex-end;
+}
+
+.security-identification__actions button,
+.vulnerability-list-actions button,
+.vulnerability-row-actions button {
+  display: inline-flex;
+  min-height: 32px;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 9px;
+  font-size: var(--font-min);
+}
+
+.security-identification__actions svg,
+.vulnerability-list-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.security-identification__disabled {
+  padding: 11px 12px;
+  margin: 0;
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger-strong);
+}
+
+.service-vulnerabilities-header {
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.service-vulnerabilities-header h2 {
+  min-width: 190px;
+}
+
+.vulnerability-list-actions {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.service-vulnerabilities-panel .service-table th:last-child,
+.service-vulnerabilities-panel .service-table td:last-child {
+  width: 132px;
+}
+
+.vulnerability-row-actions {
+  justify-content: center;
+}
+
+.vulnerability-row-actions a {
+  white-space: nowrap;
+}
+
+.manual-vulnerability-modal {
+  width: min(94vw, 680px);
+  max-height: min(90vh, 760px);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.manual-vulnerability-modal > form {
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.cpe-edit-modal {
+  width: min(94vw, 680px);
+}
+
+.manual-vulnerability-form__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.manual-vulnerability-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.modal-help-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .service-detail-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .security-identification__header,
+  .manual-vulnerability-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .security-identification__header {
+    display: grid;
+  }
+
+  .security-identification__actions,
+  .vulnerability-list-actions {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}
+
+/* Keep every top-level card on the same lightweight glass surface. */
+.sidebar,
+.dashboard-page > .page-title-block,
+.platforms-page > .page-header,
+.platform-detail-page > .page-header,
+.dashboard-content > section > .page-header,
+.dashboard-panel,
+.platform-summary,
+.realtime-card,
+.platform-detail-columns .services-panel,
+.platform-detail-columns .history-panel,
+.service-overview-panel,
+.service-vulnerabilities-panel,
+.vulnerability-detail-panel,
+.notification-item,
+.scan-form,
+.scan-progress,
+.upload-panel,
+.mapping-form,
+.preview-panel,
+.activity-stats article,
+.activity-filters,
+.activity-event,
+.activity-state,
+.activity-empty,
+.activity-pagination,
+.auth-card,
+.settings-modal {
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.platform-panel,
+.platform-detail-columns .services-panel {
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
+}
+
+.platform-panel::before,
+.platform-detail-columns .services-panel::before,
+.platform-detail-columns .services-panel::after {
+  display: none;
+}
+
+.settings-modal {
+  background: color-mix(in srgb, var(--surface-solid) 84%, transparent);
+}
+
+/* On the dashboard, only a dedicated wrapper around the search is a glass card. */
+.dashboard-page .platform-panel {
+  gap: 4px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.dashboard-page .dashboard-search-card {
+  padding: 10px 19px 10px 22px;
+  margin: -11px -19px 0 -22px;
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.dashboard-page .dashboard-search-card > .search-input {
+  width: 100%;
+}
+
+/* Users, roles and vulnerability treatment workflow */
+.users-page,
+.treatments-page {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 24px;
+}
+
+.users-page > .page-header,
+.treatments-page > .page-header {
+  margin-bottom: 0;
+}
+
+.users-page__intro,
+.treatments-intro {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.user-list,
+.treatment-list {
+  display: grid;
+  gap: 9px;
+}
+
+.user-card,
+.treatment-card,
+.treatment-empty,
+.treatment-filters {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.user-card {
+  display: grid;
+  grid-template-columns: 38px minmax(210px, 1fr) minmax(160px, 0.7fr);
+  gap: 14px;
+  align-items: center;
+  padding: 17px 19px;
+}
+
+.user-card--readonly {
+  grid-template-columns: minmax(210px, 1fr) minmax(160px, 0.7fr);
+}
+
+.user-card__identity,
+.user-card__status {
+  display: flex;
+  min-width: 0;
+  gap: 11px;
+  align-items: center;
+}
+
+.user-card__identity > span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 10%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  place-items: center;
+}
+
+.user-card__identity svg,
+.user-card__status svg {
+  width: 18px;
+  height: 18px;
+}
+
+.user-card h2,
+.user-card p {
+  margin: 0;
+}
+
+.user-card h2 {
+  font-size: 15px;
+}
+
+.user-card p,
+.user-card__status {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.role-select-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.role-select-description {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.user-action-menu > button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.user-action-menu__content {
+  z-index: 40;
+  min-width: 218px;
+}
+
+.user-action-menu__content svg {
+  width: 15px;
+  height: 15px;
+}
+
+.user-action-menu__content .action-menu__danger {
+  color: var(--danger);
+}
+
+.user-card__error {
+  grid-column: 1 / -1;
+}
+
+.user-create-modal,
+.user-edit-modal,
+.user-password-modal,
+.treatment-assignment-modal,
+.treatment-modal {
+  width: min(94vw, 680px);
+}
+
+.treatment-filters {
+  display: flex;
+  gap: 7px;
+  padding: 10px;
+}
+
+.treatment-filters button {
+  min-height: 34px;
+  padding: 6px 11px;
+}
+
+.treatment-filters button.is-active {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.treatment-card {
+  display: grid;
+  gap: 13px;
+  padding: 17px 19px;
+  border-left: 3px solid var(--focus);
+}
+
+.treatment-card--submitted {
+  border-left-color: #f59e0b;
+}
+
+.treatment-card--confirmed {
+  border-left-color: var(--safe);
+}
+
+.treatment-card--cancelled {
+  border-left-color: var(--text-muted);
+  opacity: 0.78;
+}
+
+.treatment-card__top {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.treatment-card__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  place-items: center;
+}
+
+.treatment-card__icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.treatment-card__top h2,
+.treatment-card__top p {
+  margin: 0;
+}
+
+.treatment-card__top h2 {
+  margin-top: 4px;
+  font-size: 16px;
+}
+
+.treatment-card__top p,
+.treatment-card__top time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.treatment-status {
+  color: var(--focus);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.treatment-card__facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.treatment-card__facts > div {
+  min-width: 0;
+  padding: 9px 11px;
+  background: color-mix(in srgb, var(--surface-solid) 68%, transparent);
+}
+
+.treatment-card__facts dt {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.treatment-card__facts dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treatment-note {
+  padding: 10px 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+}
+
+.treatment-note strong,
+.treatment-note p,
+.treatment-version {
+  margin: 0;
+  font-size: 12px;
+}
+
+.treatment-note p {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.treatment-card__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.treatment-card__actions button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.treatment-card__actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+.treatment-card__actions .treatment-cancel-button {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.treatment-empty {
+  padding: 32px;
+  text-align: center;
+}
+
+.treatment-empty svg {
+  width: 34px;
+  height: 34px;
+  color: var(--safe);
+}
+
+.treatment-empty h2 {
+  margin: 8px 0 0;
+  font-size: 15px;
+}
+
+@media (max-width: 1050px) {
+  .user-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .treatment-card__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .treatment-card__top {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .treatment-card__top time {
+    grid-column: 2;
+  }
+}
+
+/* Unified data-entry modals: one clean surface, no nested scrolling. */
+.modal-backdrop.form-modal-backdrop {
+  align-items: start;
+  justify-items: center;
+  padding: clamp(16px, 4vh, 36px) 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.form-modal-backdrop > .form-dialog {
+  width: min(100%, 720px);
+  height: auto;
+  max-height: none;
+  margin: auto 0;
+  gap: 0;
+  padding: 0;
+  overflow: visible;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 24px 72px rgb(0 0 0 / 0.42);
+  grid-template-rows: none;
+}
+
+.form-dialog > .section-header {
+  min-height: 0;
+  padding: 16px 18px;
+  margin: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+.form-dialog > .section-header > div {
+  min-width: 0;
+}
+
+.form-dialog > .section-header .eyebrow {
+  margin: 0 0 3px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.form-dialog > .section-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.form-dialog > .platform-form,
+.form-dialog > .add-services-modal__body {
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  gap: 13px;
+  padding: 18px;
+  margin: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overscroll-behavior: auto;
+}
+
+.form-dialog .form-field {
+  min-width: 0;
+  gap: 6px;
+}
+
+.form-dialog .form-field label,
+.form-dialog .form-field legend {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.form-dialog .form-field small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.form-dialog .form-field input:not([type="checkbox"]),
+.form-dialog .form-field textarea,
+.form-dialog .custom-select__trigger {
+  min-height: 40px;
+  font-size: 13px;
+  background: var(--surface-subtle);
+  border-color: var(--border-strong);
+}
+
+.form-dialog .form-field textarea {
+  min-height: 104px;
+  max-height: 220px;
+  resize: vertical;
+}
+
+.form-dialog .form-actions {
+  gap: 8px;
+  padding: 3px 0 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+}
+
+.form-dialog .form-actions button {
+  min-height: 38px;
+  padding: 8px 13px;
+}
+
+.manual-vulnerability-modal,
+.manual-vulnerability-modal > form {
+  max-height: none;
+  overflow: visible;
+  grid-template-rows: none;
+}
+
+.manual-vulnerability-modal > form {
+  padding: 18px;
+}
+
+.password-input-control {
+  position: relative;
+  min-width: 0;
+}
+
+.form-dialog .password-input-control > input {
+  padding-right: 82px;
+}
+
+.password-input-control__actions {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: flex;
+  gap: 4px;
+  transform: translateY(-50%);
+}
+
+.password-input-control__actions button {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  place-items: center;
+}
+
+.password-input-control__actions button:hover:not(:disabled),
+.password-input-control__actions button:focus-visible {
+  color: var(--text);
+  background: var(--surface-solid);
+  border-color: var(--border-strong);
+}
+
+.password-input-control__actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.password-copy-status {
+  min-height: 0;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.password-copy-status--copied {
+  color: var(--safe);
+}
+
+.password-copy-status--error {
+  color: var(--danger);
+}
+
+.settings-modal.add-services-modal--manual.form-dialog {
+  width: min(100%, 900px);
+}
+
+.add-services-modal--manual.form-dialog .add-services-modal__body {
+  padding: 16px 18px 18px;
+}
+
+.add-services-modal--manual .manual-services-page .method-switch {
+  padding: 9px 11px;
+  margin: 0 0 12px;
+}
+
+.add-services-modal--manual .bulk-service-form {
+  gap: 10px;
+  margin: 0;
+}
+
+.add-services-modal--manual .service-form-row {
+  grid-template-columns: minmax(0, 1.25fr) minmax(115px, 0.55fr) minmax(190px, 0.85fr) 32px;
+  gap: 9px;
+  padding: 10px;
+}
+
+.add-services-modal--manual .bulk-service-form > button:not(.primary-button) {
+  justify-self: start;
+  min-height: 36px;
+  padding: 7px 11px;
+}
+
+.add-services-modal--manual .add-services-modal__body .form-actions {
+  position: static;
+  bottom: auto;
+  padding: 4px 0 0;
+}
+
+@media (max-width: 760px) {
+  .modal-backdrop.form-modal-backdrop {
+    padding: 8px;
+  }
+
+  .form-modal-backdrop > .form-dialog {
+    width: 100%;
+    margin: auto 0;
+    border-radius: 6px;
+  }
+
+  .form-dialog > .section-header,
+  .form-dialog > .platform-form,
+  .form-dialog > .add-services-modal__body {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .add-services-modal--manual .service-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .add-services-modal--manual .service-row-remove-button {
+    justify-self: end;
+  }
+
+  .form-dialog .form-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 }

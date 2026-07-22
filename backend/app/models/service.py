@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -99,6 +100,7 @@ class Service(Base):
     version: Mapped[str | None] = mapped_column(String(200))
     normalized_version: Mapped[str | None] = mapped_column(String(200), index=True)
     cpe_uri: Mapped[str | None] = mapped_column(String(2048))
+    cpe_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     cpe_match_confidence: Mapped[float | None] = mapped_column(Float)
     cpe_match_method: Mapped[str | None] = mapped_column(String(100))
     source: Mapped[str] = mapped_column(String(20), index=True)

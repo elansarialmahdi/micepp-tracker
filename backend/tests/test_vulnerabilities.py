@@ -359,3 +359,145 @@ def test_product_family_uses_cna_versions_when_nvd_has_no_exact_cpe(
     ).json()
     assert [item["cve_id"] for item in findings] == ["CVE-2026-15478"]
     assert findings[0]["match_state"] == "confirmed"
+
+
+def test_ignored_vulnerabilities_are_available_in_history_and_reactivatable(
+    vulnerability_context: VulnerabilityTestContext,
+) -> None:
+    checked = vulnerability_context.client.post(
+        f"/v1/services/{vulnerability_context.service_id}/check",
+        headers=vulnerability_context.headers,
+    )
+    assert checked.status_code == 200
+    active = vulnerability_context.client.get(
+        f"/v1/services/{vulnerability_context.service_id}/vulnerabilities",
+        headers=vulnerability_context.headers,
+    ).json()
+    link_id = active[0]["link_id"]
+
+    ignored = vulnerability_context.client.patch(
+        f"/v1/service-vulnerabilities/{link_id}/ignore",
+        headers=vulnerability_context.headers,
+        json={"ignored": True, "reason": "Acceptée temporairement"},
+    )
+    assert ignored.status_code == 200
+    assert vulnerability_context.client.get(
+        f"/v1/services/{vulnerability_context.service_id}/vulnerabilities",
+        headers=vulnerability_context.headers,
+    ).json() == []
+    history = vulnerability_context.client.get(
+        f"/v1/services/{vulnerability_context.service_id}/vulnerabilities?view=history",
+        headers=vulnerability_context.headers,
+    )
+    assert history.status_code == 200
+    assert [item["link_id"] for item in history.json()] == [link_id]
+
+    restored = vulnerability_context.client.patch(
+        f"/v1/service-vulnerabilities/{link_id}/ignore",
+        headers=vulnerability_context.headers,
+        json={"ignored": False},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["ignored_at"] is None
+    assert restored.json()["resolved_at"] is None
+    assert vulnerability_context.client.get(
+        f"/v1/services/{vulnerability_context.service_id}/vulnerabilities",
+        headers=vulnerability_context.headers,
+    ).json()[0]["link_id"] == link_id
+
+    service = vulnerability_context.client.get(
+        f"/v1/services/{vulnerability_context.service_id}",
+        headers=vulnerability_context.headers,
+    ).json()
+    platform_history = vulnerability_context.client.get(
+        f"/v1/platforms/{service['platform_id']}/history",
+        headers=vulnerability_context.headers,
+    ).json()
+    actions = {item["action"] for item in platform_history["items"]}
+    assert {"vulnerability.ignore", "vulnerability.restore"}.issubset(actions)
+    decisions = [
+        item["summary"]
+        for item in platform_history["items"]
+        if item["action"] in {"vulnerability.ignore", "vulnerability.restore"}
+    ]
+    assert all("service NGINX" in decision for decision in decisions)
+
+
+def test_manual_vulnerability_and_verified_cpe_controls(
+    vulnerability_context: VulnerabilityTestContext,
+) -> None:
+    checked = vulnerability_context.client.post(
+        f"/v1/services/{vulnerability_context.service_id}/check",
+        headers=vulnerability_context.headers,
+    )
+    assert checked.status_code == 200
+    assert checked.json()["active_vulnerabilities"] == 1
+    manual = vulnerability_context.client.post(
+        f"/v1/services/{vulnerability_context.service_id}/vulnerabilities/manual",
+        headers=vulnerability_context.headers,
+        json={
+            "description": "Une configuration locale doit être corrigée.",
+        },
+    )
+    assert manual.status_code == 201, manual.text
+    manual_identifier = manual.json()["cve_id"]
+    assert manual_identifier.startswith("MANUEL-")
+    assert manual.json()["severity"] == "unknown"
+
+    notifications = vulnerability_context.client.get(
+        "/v1/notifications", headers=vulnerability_context.headers
+    )
+    assert notifications.status_code == 200
+    notification = notifications.json()["items"][0]
+    assert manual_identifier in notification["metadata"]["identifiers"]
+    assert notification["service_name"] == "NGINX"
+
+    disabled = vulnerability_context.client.patch(
+        f"/v1/services/{vulnerability_context.service_id}/cpe",
+        headers=vulnerability_context.headers,
+        json={"enabled": False},
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["cpe_enabled"] is False
+    assert disabled.json()["cpe_uri"] is None
+    blocked = vulnerability_context.client.post(
+        f"/v1/services/{vulnerability_context.service_id}/check",
+        headers=vulnerability_context.headers,
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "AUTOMATIC_CHECK_DISABLED"
+    active = vulnerability_context.client.get(
+        f"/v1/services/{vulnerability_context.service_id}/vulnerabilities",
+        headers=vulnerability_context.headers,
+    ).json()
+    assert [item["cve_id"] for item in active] == [manual_identifier]
+
+    missing = vulnerability_context.client.patch(
+        f"/v1/services/{vulnerability_context.service_id}/cpe",
+        headers=vulnerability_context.headers,
+        json={
+            "enabled": True,
+            "cpe_uri": "cpe:2.3:a:missing:product:1.0:*:*:*:*:*:*:*",
+        },
+    )
+    assert missing.status_code == 422
+    assert missing.json()["error"]["code"] == "CPE_NOT_FOUND"
+
+    cpe_uri = "cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*"
+    replaced = vulnerability_context.client.patch(
+        f"/v1/services/{vulnerability_context.service_id}/cpe",
+        headers=vulnerability_context.headers,
+        json={"enabled": True, "cpe_uri": cpe_uri},
+    )
+    assert replaced.status_code == 200, replaced.text
+    assert replaced.json()["cpe_enabled"] is True
+    assert replaced.json()["cpe_uri"] == cpe_uri
+    assert replaced.json()["cpe_match_method"] == "manual"
+
+    platform_id = replaced.json()["platform_id"]
+    history = vulnerability_context.client.get(
+        f"/v1/platforms/{platform_id}/history",
+        headers=vulnerability_context.headers,
+    ).json()
+    actions = {item["action"] for item in history["items"]}
+    assert {"vulnerability.create.manual", "cpe.disable", "cpe.replace"}.issubset(actions)

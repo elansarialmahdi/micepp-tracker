@@ -24,7 +24,7 @@ class Settings(BaseSettings):
         "http://localhost:8081",
         "http://localhost:5173",
     ]
-    expected_database_revision: str = "20260715_0011"
+    expected_database_revision: str = "20260721_0015"
     import_max_file_bytes: int = 5 * 1024 * 1024
     import_max_uncompressed_bytes: int = 20 * 1024 * 1024
     import_max_rows: int = 1000
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     import_timeout_seconds: int = 15
     ai_provider: str | None = None
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     gemini_api_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_seconds: Annotated[int, Field(ge=5, le=120)] = 30
     scan_detector_mode: Literal["mock", "nmap", "web", "combined"] = "mock"

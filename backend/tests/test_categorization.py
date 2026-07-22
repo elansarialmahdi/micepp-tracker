@@ -2,15 +2,22 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
 from app.core.config import Settings
-from app.services.categorization import ServiceToCategorize, categorize_with_ai
+from app.services.categorization import (
+    CategorizationFailed,
+    ServiceToCategorize,
+    categorize_with_ai,
+)
 
 
 def test_gemini_categorization_uses_structured_output(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict = {}
 
     class FakeResponse:
+        status_code = 200
+
         def raise_for_status(self) -> None:
             return None
 
@@ -59,6 +66,9 @@ def test_gemini_categorization_uses_structured_output(monkeypatch) -> None:  # t
     assert captured["url"].endswith("/models/gemini-2.5-flash:generateContent")
     assert captured["headers"] == {"x-goog-api-key": "test-key"}
     assert captured["body"]["generationConfig"]["responseMimeType"] == "application/json"
+    assert captured["body"]["generationConfig"]["thinkingConfig"] == {
+        "thinkingLevel": "minimal"
+    }
     response_schema = captured["body"]["generationConfig"]["responseSchema"]
     assert "additionalProperties" not in response_schema
     assert "additionalProperties" not in response_schema["properties"]["assignments"]["items"]
@@ -111,3 +121,42 @@ def test_mock_categorization_reuses_a_compatible_existing_category() -> None:
     )
 
     assert {item.category_name for item in result} == {"Serveurs web"}
+
+
+def test_gemini_categorization_explains_disabled_service_account(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class FakeClient:
+        async def __aenter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        async def __aexit__(self, *args) -> None:  # type: ignore[no-untyped-def]
+            return None
+
+        async def post(self, url: str, **_kwargs) -> httpx.Response:
+            request = httpx.Request("POST", url)
+            return httpx.Response(
+                401,
+                request=request,
+                json={
+                    "error": {
+                        "status": "UNAUTHENTICATED",
+                        "message": "The bound service account is deleted or disabled.",
+                    }
+                },
+            )
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: FakeClient())
+    settings = Settings(
+        app_env="test",
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        gemini_model="gemini-2.5-flash",
+    )
+
+    with pytest.raises(CategorizationFailed, match="compte de service.*désactivé"):
+        asyncio.run(
+            categorize_with_ai(
+                [ServiceToCategorize(key="apache", name="Apache")],
+                [],
+                settings,
+            )
+        )

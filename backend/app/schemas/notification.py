@@ -57,3 +57,10 @@ class AuditEventListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    success_total: int = 0
+    failure_total: int = 0
+
+
+class ActivityPageViewRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    title: str | None = Field(default=None, max_length=200)

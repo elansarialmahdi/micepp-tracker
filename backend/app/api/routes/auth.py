@@ -16,7 +16,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from app.services.audit import record_audit, request_audit_context
+from app.services.audit import record_audit, request_audit_context, request_client_metadata
 from app.services.auth import (
     IssuedTokens,
     authenticate,
@@ -99,13 +99,18 @@ async def login(
     )
     try:
         user = await authenticate(db, payload.username, payload.password, settings)
-    except AppError:
+    except AppError as exc:
         record_audit(
             db,
             action="auth.login.failed",
             entity_type="session",
-            summary="Échec de connexion",
-            metadata={"username": payload.username},
+            summary=f"Échec de connexion pour {payload.username}",
+            metadata={
+                "username": payload.username,
+                "result": "failure",
+                "error_code": exc.code,
+                **request_client_metadata(request),
+            },
             **request_audit_context(request),
         )
         await db.commit()
@@ -118,12 +123,14 @@ async def login(
         ip,
         request.headers.get("User-Agent"),
     )
+    request.state.user_id = str(user.id)
     record_audit(
         db,
         actor_user_id=user.id,
         action="auth.login",
         entity_type="session",
-        summary="Connexion réussie",
+        summary=f"Connexion réussie : {user.display_name}",
+        metadata={"result": "success", **request_client_metadata(request)},
         **request_audit_context(request),
     )
     await db.commit()
@@ -154,6 +161,7 @@ async def refresh(
         ip,
         request.headers.get("User-Agent"),
     )
+    request.state.user_id = str(issued.response.user.id)
     set_auth_cookies(response, settings, issued)
     return issued.response
 
@@ -167,6 +175,8 @@ async def logout(
     settings: Settings = request.app.state.settings
     validate_csrf(request, settings)
     user_id = await revoke_refresh_token(db, request.cookies.get(settings.refresh_cookie_name))
+    if user_id:
+        request.state.user_id = str(user_id)
     record_audit(
         db,
         actor_user_id=user_id,

@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { landingPath } from "../auth/access";
 import { ToggleSwitch } from "../components/ToggleSwitch";
 
 const schema = z.object({
@@ -30,15 +31,20 @@ export function LoginPage() {
     return <p className="route-status" role="status">Chargement de la session…</p>;
   }
   if (auth.status === "authenticated") {
-    return <Navigate to={auth.user?.must_change_password ? "/change-password" : "/"} replace />;
+    return <Navigate to={auth.user?.must_change_password ? "/change-password" : landingPath(auth.user?.permissions)} replace />;
   }
 
   const submit = handleSubmit(async (values) => {
     setServerError(null);
     try {
       const user = await auth.login(values);
-      const requestedPath = (location.state as { from?: string } | null)?.from ?? "/";
-      navigate(user.must_change_password ? "/change-password" : requestedPath, { replace: true });
+      const requestedPath = (location.state as { from?: string } | null)?.from;
+      navigate(
+        user.must_change_password
+          ? "/change-password"
+          : requestedPath ?? landingPath(user.permissions),
+        { replace: true },
+      );
     } catch (error) {
       setServerError(error instanceof ApiError ? error.message : "Le serveur est indisponible.");
     }

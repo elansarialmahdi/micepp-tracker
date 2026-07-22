@@ -12,7 +12,13 @@ USER_LOAD_OPTIONS = (selectinload(User.roles).selectinload(Role.permissions),)
 
 async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
     result = await db.execute(
-        select(User).where(User.username == username).options(*USER_LOAD_OPTIONS)
+        select(User)
+        .where(
+            User.username == username,
+            User.is_active.is_(True),
+            User.archived_at.is_(None),
+        )
+        .options(*USER_LOAD_OPTIONS)
     )
     return result.scalar_one_or_none()
 

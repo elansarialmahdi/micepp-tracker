@@ -287,6 +287,26 @@ class NVDClient:
             start += per_page
         return result
 
+    async def cpe_exists(self, cpe_uri: str) -> bool:
+        if self.settings.nvd_mode == "disabled":
+            raise RuntimeError("La vérification CPE NVD est désactivée.")
+        if self.settings.nvd_mode == "mock":
+            return any(
+                item.get("cpeName") == cpe_uri
+                for items in MOCK_CPES.values()
+                for item in items
+            )
+        payload = await self._request(
+            self.settings.nvd_cpe_url,
+            {"cpeMatchString": cpe_uri},
+            "cpe_exact",
+        )
+        return any(
+            item.get("cpe", {}).get("cpeName") == cpe_uri
+            and item.get("cpe", {}).get("deprecated") is not True
+            for item in payload.get("products", [])
+        )
+
     async def cves_for_cpe(self, cpe_uri: str) -> list[dict[str, Any]]:
         if self.settings.nvd_mode == "disabled":
             return []

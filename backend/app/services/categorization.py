@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import unicodedata
@@ -60,6 +61,37 @@ class _GeminiAssignment(BaseModel):
 
 class _GeminiResponse(BaseModel):
     assignments: list[_GeminiAssignment]
+
+
+def _gemini_http_error_message(response: httpx.Response) -> str:
+    """Turn Gemini client errors into actionable messages without exposing secrets."""
+    status_code = response.status_code
+    if status_code == 401:
+        return (
+            "La clé Gemini est invalide, ou le compte de service qui lui est lié est "
+            "désactivé ou supprimé. Vérifiez cette clé dans Google AI Studio."
+        )
+    if status_code == 403:
+        return (
+            "La clé Gemini n’a pas l’autorisation d’utiliser l’API. Vérifiez ses restrictions "
+            "et l’accès du projet dans Google AI Studio."
+        )
+    if status_code == 429:
+        return "Le quota Gemini est épuisé. Vérifiez le quota ou la facturation du projet."
+    if status_code == 404:
+        try:
+            provider_message = str(response.json().get("error", {}).get("message", ""))
+        except (TypeError, ValueError):
+            provider_message = ""
+        if "no longer available to new users" in provider_message.casefold():
+            return (
+                "Le modèle Gemini configuré n’est plus accessible aux nouveaux utilisateurs. "
+                "Utilisez un modèle récent, par exemple gemini-3.5-flash-lite."
+            )
+        return "Le modèle Gemini configuré est introuvable ou indisponible pour ce projet."
+    if status_code == 400:
+        return "Gemini a refusé le format de la demande de catégorisation."
+    return "Gemini est temporairement indisponible. Réessayez dans quelques instants."
 
 
 def categorization_available(provider: str | None, gemini_api_key: str | None = None) -> bool:
@@ -190,7 +222,9 @@ async def categorize_with_ai(
     allowed_categories = list(
         dict.fromkeys([*existing_categories, *BROAD_CATEGORY_TAXONOMY])
     )
-    target_category_count = max(1, min(6, (len(items) + 3) // 4))
+    target_category_count = max(
+        1, min(len(items), max(2, min(6, (len(items) + 3) // 4)))
+    )
     prompt = (
         "Tu classes des logiciels et services techniques dans un inventaire de cybersécurité. "
         "Analyse tout le lot avant de répondre et regroupe les éléments dans le plus petit nombre "
@@ -251,19 +285,24 @@ async def categorize_with_ai(
     url = f"{settings.gemini_api_url.rstrip('/')}/models/{settings.gemini_model}:generateContent"
     try:
         async with httpx.AsyncClient(timeout=settings.gemini_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers={"x-goog-api-key": settings.gemini_api_key},
-                json={
-                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "responseMimeType": "application/json",
-                        "responseSchema": schema,
+            for attempt in range(3):
+                response = await client.post(
+                    url,
+                    headers={"x-goog-api-key": settings.gemini_api_key},
+                    json={
+                        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.1,
+                            "thinkingConfig": {"thinkingLevel": "minimal"},
+                            "responseMimeType": "application/json",
+                            "responseSchema": schema,
+                        },
                     },
-                },
-            )
-            response.raise_for_status()
+                )
+                if response.status_code not in {429, 503} or attempt == 2:
+                    response.raise_for_status()
+                    break
+                await asyncio.sleep(2**attempt)
             data = response.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"]
         parsed = _GeminiResponse.model_validate_json(text)
@@ -276,9 +315,7 @@ async def categorize_with_ai(
                 "model": settings.gemini_model,
             },
         )
-        raise CategorizationFailed(
-            "Gemini a refusé la demande de catégorisation. Réessayez dans quelques instants."
-        ) from exc
+        raise CategorizationFailed(_gemini_http_error_message(exc.response)) from exc
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, ValidationError) as exc:
         logger.warning(
             "gemini_categorization_invalid_response",

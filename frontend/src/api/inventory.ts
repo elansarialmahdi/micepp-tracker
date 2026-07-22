@@ -19,6 +19,7 @@ export type Service = {
   product: string | null;
   version: string | null;
   cpe_uri: string | null;
+  cpe_enabled: boolean;
   cpe_match_confidence: number | null;
   cpe_match_method: string | null;
   security_identity: {
@@ -233,6 +234,7 @@ export type CpeCandidate = {
 };
 export type ServiceVulnerability = {
   link_id: string;
+  service_id: string;
   vulnerability_id: string;
   cve_id: string;
   title: string | null;
@@ -268,6 +270,15 @@ export type CheckResult = {
   new_notifications: number;
 };
 
+export type ManualVulnerabilityInput = {
+  identifier?: string | null;
+  title?: string | null;
+  description: string;
+  severity?: "critical" | "high" | "medium" | "low" | "unknown" | null;
+  cvss_score?: number | null;
+  reference_url?: string | null;
+};
+
 export function checkService(serviceId: string): Promise<CheckResult> {
   return apiRequest(
     `/v1/services/${serviceId}/check`,
@@ -298,10 +309,33 @@ export function selectCpeCandidate(
 export function getServiceVulnerabilities(
   serviceId: string,
   signal?: AbortSignal,
+  view: "active" | "history" = "active",
 ): Promise<ServiceVulnerability[]> {
   return apiRequest(
-    `/v1/services/${serviceId}/vulnerabilities`,
+    `/v1/services/${serviceId}/vulnerabilities?view=${view}`,
     { signal },
+    { authenticated: true },
+  );
+}
+
+export function updateServiceCpe(
+  serviceId: string,
+  input: { enabled: boolean; cpe_uri?: string | null },
+): Promise<Service> {
+  return apiRequest(
+    `/v1/services/${serviceId}/cpe`,
+    { method: "PATCH", body: JSON.stringify(input) },
+    { authenticated: true },
+  );
+}
+
+export function createManualVulnerability(
+  serviceId: string,
+  input: ManualVulnerabilityInput,
+): Promise<ServiceVulnerability> {
+  return apiRequest(
+    `/v1/services/${serviceId}/vulnerabilities/manual`,
+    { method: "POST", body: JSON.stringify(input) },
     { authenticated: true },
   );
 }

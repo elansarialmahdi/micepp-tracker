@@ -10,6 +10,7 @@ from app.models.platform import Platform, PlatformTargetType
 from app.models.realtime import ProtectionJob, RealtimeProtectionSetting
 from app.models.scan import DetectedService, ScanJob
 from app.models.service import Category, Service, ServiceImport, ServiceSource
+from app.models.treatment import TreatmentStatus, VulnerabilityTreatment
 from app.models.vulnerability import (
     CPECandidate,
     MatchState,
@@ -40,6 +41,8 @@ __all__ = [
     "ServiceSource",
     "User",
     "UserRole",
+    "TreatmentStatus",
+    "VulnerabilityTreatment",
     "CPECandidate",
     "MatchState",
     "NVDCache",

@@ -36,6 +36,8 @@ export function HistoryPanel({ platformId }: { platformId: string }) {
   const history = useQuery({
     queryKey: ["platform-history", platformId, showTrash],
     queryFn: ({ signal }) => getPlatformHistory(platformId, signal, showTrash),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
   });
   const hide = useMutation({
     mutationFn: () => hidePlatformHistory(platformId),

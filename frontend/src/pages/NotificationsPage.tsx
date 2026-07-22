@@ -31,6 +31,8 @@ export function NotificationsPage() {
   const notifications = useQuery({
     queryKey: ["notifications"],
     queryFn: ({ signal }) => getNotifications(signal),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["notifications"] });
   const read = useMutation({ mutationFn: readNotification, onSuccess: refresh });

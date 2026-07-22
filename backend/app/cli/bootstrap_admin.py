@@ -48,6 +48,27 @@ async def bootstrap_admin(db: AsyncSession, settings: Settings) -> BootstrapResu
         db.add(role)
     role.permissions = list(existing_permissions.values())
 
+    role_definitions = {
+        "Audit": (
+            "Accès limité à l’historique des activités.",
+            {"history.read"},
+        ),
+        "Traitant": (
+            "Accès limité aux vulnérabilités qui lui sont attribuées.",
+            {"treatment.read_own", "treatment.submit"},
+        ),
+    }
+    for role_name, (description, permission_codes) in role_definitions.items():
+        managed_role = await db.scalar(select(Role).where(Role.name == role_name))
+        if managed_role is None:
+            managed_role = Role(
+                name=role_name,
+                description=description,
+                is_system=True,
+            )
+            db.add(managed_role)
+        managed_role.permissions = [existing_permissions[code] for code in permission_codes]
+
     user_count = await db.scalar(select(func.count(User.id)))
     if user_count:
         await db.commit()

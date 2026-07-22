@@ -15,6 +15,8 @@ from app.api.routes.notifications import router as notifications_router
 from app.api.routes.platforms import router as platforms_router
 from app.api.routes.realtime import router as realtime_router
 from app.api.routes.scans import router as scans_router
+from app.api.routes.treatments import router as treatments_router
+from app.api.routes.users import router as users_router
 from app.api.routes.vulnerabilities import router as vulnerabilities_router
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError, app_error_handler, validation_error_handler
@@ -66,6 +68,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inventory_router)
     app.include_router(imports_router)
     app.include_router(notifications_router)
+    app.include_router(users_router)
+    app.include_router(treatments_router)
     return app
 
 

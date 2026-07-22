@@ -80,6 +80,28 @@ def test_categories_are_global_and_unique(inventory_context: InventoryContext) -
     assert [item["name"] for item in categories.json()] == ["Serveurs web"]
 
 
+def test_archived_category_can_be_created_again(inventory_context: InventoryContext) -> None:
+    platform_id = create_platform(inventory_context, "Plateforme restauration")
+    category = create_category(inventory_context, platform_id, "Serveurs web").json()
+
+    archived = inventory_context.client.delete(
+        f"/v1/categories/{category['id']}", headers=inventory_context.headers
+    )
+    assert archived.status_code == 200
+    assert archived.json()["archived_at"] is not None
+
+    restored = inventory_context.client.post(
+        f"/v1/platforms/{platform_id}/categories",
+        headers=inventory_context.headers,
+        json={"name": " serveurs   web ", "description": "Catégorie restaurée"},
+    )
+
+    assert restored.status_code == 201
+    assert restored.json()["id"] == category["id"]
+    assert restored.json()["archived_at"] is None
+    assert restored.json()["description"] == "Catégorie restaurée"
+
+
 def test_ai_categorization_creates_and_reuses_global_categories(
     inventory_context: InventoryContext,
 ) -> None:
@@ -178,6 +200,32 @@ def test_ai_preview_does_not_create_until_selected_categories_are_confirmed(
         f"/v1/platforms/{platform_id}/categories", headers=inventory_context.headers
     )
     assert [item["name"] for item in categories_after.json()] == ["Serveurs HTTP"]
+
+
+def test_ai_confirmation_restores_an_archived_category(
+    inventory_context: InventoryContext,
+) -> None:
+    platform_id = create_platform(inventory_context, "Plateforme restauration IA")
+    category = create_category(inventory_context, platform_id, "Serveurs HTTP").json()
+    archived = inventory_context.client.delete(
+        f"/v1/categories/{category['id']}", headers=inventory_context.headers
+    )
+    assert archived.status_code == 200
+
+    confirmed = inventory_context.client.post(
+        f"/v1/platforms/{platform_id}/categories/ai-categorize/confirm",
+        headers=inventory_context.headers,
+        json={
+            "items": [
+                {"key": "apache", "category_name": "serveurs http", "selected": True}
+            ]
+        },
+    )
+
+    assert confirmed.status_code == 200
+    restored = confirmed.json()["items"][0]["category"]
+    assert restored["id"] == category["id"]
+    assert restored["archived_at"] is None
 
 
 def test_bulk_services_deduplication_and_global_category_reuse(
